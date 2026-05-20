@@ -2,136 +2,168 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Notice Board - Sessions</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Notice Board — Sessions</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js" defer></script>
+  <script src="app.js" defer></script>
 </head>
 <body>
 
-  <div class="sidebar">
-    <h2>📋 Notice Board</h2>
-    <a href="index.html">🏠 Dashboard</a>
-    <a href="announcements.html">📢 Announcements</a>
-    <a href="timetable.html">📅 Timetable</a>
-    <a href="sessions.html" class="active">🎓 Sessions</a>
-    <a href="sections.html">👥 Sections</a>
-    <a href="subjects.html">📚 Subjects</a>
-    <a href="rooms.html">🏫 Rooms</a>
-    <a href="teachers.html">👨‍🏫 Teachers</a>
-    <a href="offices.html">🏢 Teacher Offices</a>
-  </div>
+  <nav class="sidebar">
+    <a class="sidebar-brand" href="index.html">
+      <div class="sidebar-brand-icon"><i data-lucide="clipboard-list"></i></div>
+      <span class="sidebar-brand-text">Notice Board</span>
+    </a>
+    <div class="sidebar-nav">
+      <a href="index.html"><i data-lucide="layout-dashboard"></i> Dashboard</a>
+      <a href="announcements.html"><i data-lucide="megaphone"></i> Announcements</a>
+      <a href="timetable.html"><i data-lucide="calendar-days"></i> Timetable</a>
+      <div class="sidebar-section-label">Data Management</div>
+      <a href="sessions.html" class="active"><i data-lucide="graduation-cap"></i> Sessions</a>
+      <a href="sections.html"><i data-lucide="users"></i> Sections</a>
+      <a href="subjects.html"><i data-lucide="book-open"></i> Subjects</a>
+      <a href="rooms.html"><i data-lucide="door-open"></i> Rooms</a>
+      <a href="teachers.html"><i data-lucide="user-square"></i> Teachers</a>
+      <a href="offices.html"><i data-lucide="building-2"></i> Teacher Offices</a>
+    </div>
+    <div class="sidebar-footer">Department Admin Panel</div>
+  </nav>
 
-  <div class="main">
-    <h1>Sessions</h1>
-    <p class="subtitle">Manage semester sessions</p>
+  <main class="main">
+    <div class="page-header">
+      <h1>Sessions</h1>
+      <p class="subtitle">Manage semester sessions</p>
+    </div>
 
     <div class="card">
-      <h2>➕ Add New Session</h2>
+      <div class="card-header">
+        <h2><i data-lucide="plus-circle"></i> Add New Session</h2>
+      </div>
       <div class="form-grid">
         <div class="form-group">
-          <label>Session Name</label>
+          <label for="session_name">Session Name</label>
           <input type="text" id="session_name" placeholder="e.g. 25 Fall Morning" />
         </div>
         <div class="form-group">
-          <label>Year</label>
+          <label for="year">Year</label>
           <input type="number" id="year" placeholder="e.g. 2025" />
         </div>
         <div class="form-group">
-          <label>Term</label>
+          <label for="term">Term</label>
           <select id="term">
             <option value="Fall">Fall</option>
             <option value="Spring">Spring</option>
           </select>
         </div>
         <div class="form-group">
-          <label>Semester</label>
+          <label for="semester">Semester</label>
           <input type="number" id="semester" placeholder="e.g. 4" min="1" max="8" />
         </div>
       </div>
-      <button class="btn btn-primary" onclick="addSession()">➕ Add Session</button>
+      <button class="btn btn-primary" onclick="addSession()">
+        <i data-lucide="plus"></i> Add Session
+      </button>
     </div>
 
     <div class="card">
-      <h2>🎓 All Sessions</h2>
-      <table>
-        <thead>
-          <tr>
-            <th>#</th>
-            <th>Session Name</th>
-            <th>Year</th>
-            <th>Term</th>
-            <th>Semester</th>
-            <th>Action</th>
-          </tr>
-        </thead>
-        <tbody id="sessions-list">
-          <tr><td colspan="6">Loading...</td></tr>
-        </tbody>
-      </table>
+      <div class="card-header">
+        <h2><i data-lucide="graduation-cap"></i> All Sessions</h2>
+        <span id="sess-count" class="badge badge-gray">—</span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Session Name</th>
+              <th>Year</th>
+              <th>Term</th>
+              <th>Semester</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody id="sessions-list">
+            <tr><td colspan="6" class="empty-row">Loading…</td></tr>
+          </tbody>
+        </table>
+      </div>
     </div>
-  </div>
+  </main>
 
   <script>
+    const API = 'http://localhost:3000';
+
     window.onload = loadSessions;
 
     async function loadSessions() {
-      const data  = await fetch('http://localhost:3000/sessions').then(r => r.json());
-      const tbody = document.getElementById('sessions-list');
-      tbody.innerHTML = '';
+      try {
+        const data  = await fetch(`${API}/sessions`).then(r => r.json());
+        const tbody = document.getElementById('sessions-list');
+        document.getElementById('sess-count').textContent = `${data.length} sessions`;
+        tbody.innerHTML = '';
 
-      if (data.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#718096">No sessions yet</td></tr>';
-        return;
-      }
+        if (data.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="6" class="empty-row">No sessions yet</td></tr>';
+          return;
+        }
 
-      data.forEach((s, i) => {
-        tbody.innerHTML += `
-          <tr>
-            <td>${i + 1}</td>
-            <td><strong>${s.session_name}</strong></td>
-            <td>${s.year}</td>
-            <td>${s.term}</td>
-            <td>Semester ${s.semester}</td>
-            <td>
-              <button class="btn btn-danger" onclick="deleteSession(${s.session_id})">🗑️ Delete</button>
-            </td>
-          </tr>
-        `;
-      });
+        data.forEach((s, i) => {
+          tbody.innerHTML += `
+            <tr>
+              <td class="text-muted text-sm">${i + 1}</td>
+              <td><span class="font-medium">${s.session_name}</span></td>
+              <td>${s.year}</td>
+              <td><span class="badge badge-blue">${s.term}</span></td>
+              <td>Semester ${s.semester}</td>
+              <td>
+                <button class="btn btn-danger" onclick="delSession(${s.session_id})">
+                  <i data-lucide="trash-2"></i> Delete
+                </button>
+              </td>
+            </tr>`;
+        });
+        if (window.lucide) lucide.createIcons();
+      } catch { showToast('Could not load sessions', 'error'); }
     }
 
     async function addSession() {
       const data = {
-        session_name: document.getElementById('session_name').value,
+        session_name: document.getElementById('session_name').value.trim(),
         year:         document.getElementById('year').value,
         term:         document.getElementById('term').value,
-        semester:     document.getElementById('semester').value
+        semester:     document.getElementById('semester').value,
       };
-
       if (!data.session_name || !data.year || !data.semester) {
-        alert('Please fill all fields!');
-        return;
+        showToast('Please fill in all fields', 'warning'); return;
       }
-
-      const res    = await fetch('http://localhost:3000/sessions', {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify(data)
-      });
-      const result = await res.json();
-      alert(result.message);
-
-      document.getElementById('session_name').value = '';
-      document.getElementById('year').value         = '';
-      document.getElementById('semester').value     = '';
-      loadSessions();
+      try {
+        const res    = await fetch(`${API}/sessions`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data)
+        });
+        const result = await res.json();
+        showToast(result.message || 'Session added', res.ok ? 'success' : 'error');
+        if (res.ok) {
+          document.getElementById('session_name').value = '';
+          document.getElementById('year').value = '';
+          document.getElementById('semester').value = '';
+          loadSessions();
+        }
+      } catch { showToast('Failed to add session', 'error'); }
     }
 
-    async function deleteSession(id) {
-      if (!confirm('Delete this session? This will also delete all related timetable entries!')) return;
-      const res    = await fetch(`http://localhost:3000/sessions/${id}`, { method: 'DELETE' });
-      const result = await res.json();
-      alert(result.message);
-      loadSessions();
+    function delSession(id) {
+      showConfirm('This will also delete all related timetable entries.', async () => {
+        try {
+          const res    = await fetch(`${API}/sessions/${id}`, { method: 'DELETE' });
+          const result = await res.json();
+          showToast(result.message || 'Deleted', res.ok ? 'success' : 'error');
+          loadSessions();
+        } catch { showToast('Failed to delete session', 'error'); }
+      }, 'Delete Session');
     }
   </script>
 

@@ -2,102 +2,140 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Notice Board - Rooms</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Notice Board — Rooms</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js" defer></script>
+  <script src="app.js" defer></script>
 </head>
 <body>
 
-  <div class="sidebar">
-    <h2>📋 Notice Board</h2>
-    <a href="index.html">🏠 Dashboard</a>
-    <a href="announcements.html">📢 Announcements</a>
-    <a href="timetable.html">📅 Timetable</a>
-    <a href="sessions.html">🎓 Sessions</a>
-    <a href="sections.html">👥 Sections</a>
-    <a href="subjects.html">📚 Subjects</a>
-    <a href="rooms.html" class="active">🏫 Rooms</a>
-    <a href="teachers.html">👨‍🏫 Teachers</a>
-    <a href="offices.html">🏢 Teacher Offices</a>
-  </div>
+  <nav class="sidebar">
+    <a class="sidebar-brand" href="index.html">
+      <div class="sidebar-brand-icon"><i data-lucide="clipboard-list"></i></div>
+      <span class="sidebar-brand-text">Notice Board</span>
+    </a>
+    <div class="sidebar-nav">
+      <a href="index.html"><i data-lucide="layout-dashboard"></i> Dashboard</a>
+      <a href="announcements.html"><i data-lucide="megaphone"></i> Announcements</a>
+      <a href="timetable.html"><i data-lucide="calendar-days"></i> Timetable</a>
+      <div class="sidebar-section-label">Data Management</div>
+      <a href="sessions.html"><i data-lucide="graduation-cap"></i> Sessions</a>
+      <a href="sections.html"><i data-lucide="users"></i> Sections</a>
+      <a href="subjects.html"><i data-lucide="book-open"></i> Subjects</a>
+      <a href="rooms.html" class="active"><i data-lucide="door-open"></i> Rooms</a>
+      <a href="teachers.html"><i data-lucide="user-square"></i> Teachers</a>
+      <a href="offices.html"><i data-lucide="building-2"></i> Teacher Offices</a>
+    </div>
+    <div class="sidebar-footer">Department Admin Panel</div>
+  </nav>
 
-  <div class="main">
-    <h1>Rooms</h1>
-    <p class="subtitle">Manage department rooms</p>
+  <main class="main">
+    <div class="page-header">
+      <h1>Rooms</h1>
+      <p class="subtitle">Manage department rooms</p>
+    </div>
 
     <div class="card">
-      <h2>➕ Add New Room</h2>
+      <div class="card-header">
+        <h2><i data-lucide="plus-circle"></i> Add New Room</h2>
+      </div>
       <div class="form-grid">
         <div class="form-group">
-          <label>Room Number</label>
-          <input type="text" id="room_number" placeholder="e.g. N13, Lab5" />
+          <label for="room_number">Room Number</label>
+          <input type="text" id="room_number" placeholder="e.g. N13, Lab-5" />
         </div>
       </div>
-      <button class="btn btn-primary" onclick="addRoom()">➕ Add Room</button>
+      <button class="btn btn-primary" onclick="addRoom()">
+        <i data-lucide="plus"></i> Add Room
+      </button>
     </div>
 
     <div class="card">
-      <h2>🏫 All Rooms</h2>
-      <table>
-        <thead>
-          <tr>
-            <th>#</th>
-            <th>Room Number</th>
-            <th>Action</th>
-          </tr>
-        </thead>
-        <tbody id="rooms-list">
-          <tr><td colspan="3">Loading...</td></tr>
-        </tbody>
-      </table>
+      <div class="card-header">
+        <h2><i data-lucide="door-open"></i> All Rooms</h2>
+        <span id="rooms-count" class="badge badge-gray">—</span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Room Number</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody id="rooms-list">
+            <tr><td colspan="3" class="empty-row">Loading…</td></tr>
+          </tbody>
+        </table>
+      </div>
     </div>
-  </div>
+  </main>
 
   <script>
+    const API = 'http://localhost:3000';
+
     window.onload = loadRooms;
 
     async function loadRooms() {
-      const data  = await fetch('http://localhost:3000/rooms').then(r => r.json());
-      const tbody = document.getElementById('rooms-list');
-      tbody.innerHTML = '';
+      try {
+        const data  = await fetch(`${API}/rooms`).then(r => r.json());
+        const tbody = document.getElementById('rooms-list');
+        document.getElementById('rooms-count').textContent = `${data.length} rooms`;
+        tbody.innerHTML = '';
 
-      data.forEach((r, i) => {
-        tbody.innerHTML += `
-          <tr>
-            <td>${i + 1}</td>
-            <td><strong>${r.room_number}</strong></td>
-            <td>
-              <button class="btn btn-danger" onclick="deleteRoom(${r.room_id})">🗑️ Delete</button>
-            </td>
-          </tr>
-        `;
-      });
+        if (data.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="3" class="empty-row">No rooms yet</td></tr>';
+          return;
+        }
+
+        data.forEach((r, i) => {
+          tbody.innerHTML += `
+            <tr>
+              <td class="text-muted text-sm">${i + 1}</td>
+              <td><span class="font-medium">${r.room_number}</span></td>
+              <td>
+                <button class="btn btn-danger" onclick="delRoom(${r.room_id})">
+                  <i data-lucide="trash-2"></i> Delete
+                </button>
+              </td>
+            </tr>`;
+        });
+        if (window.lucide) lucide.createIcons();
+      } catch { showToast('Could not load rooms', 'error'); }
     }
 
     async function addRoom() {
-      const room_number = document.getElementById('room_number').value;
+      const room_number = document.getElementById('room_number').value.trim();
+      if (!room_number) { showToast('Please enter a room number', 'warning'); return; }
 
-      if (!room_number) {
-        alert('Please enter room number!');
-        return;
-      }
-
-      const res    = await fetch('http://localhost:3000/rooms', {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ room_number })
-      });
-      const result = await res.json();
-      alert(result.message);
-      document.getElementById('room_number').value = '';
-      loadRooms();
+      try {
+        const res    = await fetch(`${API}/rooms`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ room_number })
+        });
+        const result = await res.json();
+        showToast(result.message || 'Room added', res.ok ? 'success' : 'error');
+        if (res.ok) {
+          document.getElementById('room_number').value = '';
+          loadRooms();
+        }
+      } catch { showToast('Failed to add room', 'error'); }
     }
 
-    async function deleteRoom(id) {
-      if (!confirm('Delete this room?')) return;
-      const res    = await fetch(`http://localhost:3000/rooms/${id}`, { method: 'DELETE' });
-      const result = await res.json();
-      alert(result.message);
-      loadRooms();
+    function delRoom(id) {
+      showConfirm('This room will be permanently removed.', async () => {
+        try {
+          const res    = await fetch(`${API}/rooms/${id}`, { method: 'DELETE' });
+          const result = await res.json();
+          showToast(result.message || 'Deleted', res.ok ? 'success' : 'error');
+          loadRooms();
+        } catch { showToast('Failed to delete room', 'error'); }
+      }, 'Delete Room');
     }
   </script>
 

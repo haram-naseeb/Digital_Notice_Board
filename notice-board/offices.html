@@ -2,173 +2,212 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Notice Board - Teacher Offices</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Notice Board — Teacher Offices</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js" defer></script>
+  <script src="app.js" defer></script>
 </head>
 <body>
 
-  <div class="sidebar">
-    <h2>📋 Notice Board</h2>
-    <a href="index.html">🏠 Dashboard</a>
-    <a href="announcements.html">📢 Announcements</a>
-    <a href="timetable.html">📅 Timetable</a>
-    <a href="sessions.html">🎓 Sessions</a>
-    <a href="sections.html">👥 Sections</a>
-    <a href="subjects.html">📚 Subjects</a>
-    <a href="rooms.html">🏫 Rooms</a>
-    <a href="teachers.html">👨‍🏫 Teachers</a>
-    <a href="offices.html" class="active">🏢 Teacher Offices</a>
-  </div>
+  <nav class="sidebar">
+    <a class="sidebar-brand" href="index.html">
+      <div class="sidebar-brand-icon"><i data-lucide="clipboard-list"></i></div>
+      <span class="sidebar-brand-text">Notice Board</span>
+    </a>
+    <div class="sidebar-nav">
+      <a href="index.html"><i data-lucide="layout-dashboard"></i> Dashboard</a>
+      <a href="announcements.html"><i data-lucide="megaphone"></i> Announcements</a>
+      <a href="timetable.html"><i data-lucide="calendar-days"></i> Timetable</a>
+      <div class="sidebar-section-label">Data Management</div>
+      <a href="sessions.html"><i data-lucide="graduation-cap"></i> Sessions</a>
+      <a href="sections.html"><i data-lucide="users"></i> Sections</a>
+      <a href="subjects.html"><i data-lucide="book-open"></i> Subjects</a>
+      <a href="rooms.html"><i data-lucide="door-open"></i> Rooms</a>
+      <a href="teachers.html"><i data-lucide="user-square"></i> Teachers</a>
+      <a href="offices.html" class="active"><i data-lucide="building-2"></i> Teacher Offices</a>
+    </div>
+    <div class="sidebar-footer">Department Admin Panel</div>
+  </nav>
 
-  <div class="main">
-    <h1>Teacher Offices</h1>
-    <p class="subtitle">Manage teacher office locations</p>
+  <main class="main">
+    <div class="page-header">
+      <h1>Teacher Offices</h1>
+      <p class="subtitle">Manage teacher office locations by floor</p>
+    </div>
 
     <!-- Add Form -->
     <div class="card">
-      <h2>➕ Add Teacher Office</h2>
+      <div class="card-header">
+        <h2><i data-lucide="plus-circle"></i> Add Teacher Office</h2>
+      </div>
       <div class="form-grid">
         <div class="form-group">
-          <label>Teacher</label>
+          <label for="teacher_id">Teacher</label>
           <select id="teacher_id">
-            <option value="">-- Select a Teacher --</option>
+            <option value="">Select a teacher</option>
           </select>
         </div>
         <div class="form-group">
-          <label>Floor</label>
+          <label for="floor">Floor</label>
           <select id="floor">
             <option value="Ground Floor">Ground Floor</option>
             <option value="1st Floor">1st Floor</option>
           </select>
         </div>
         <div class="form-group">
-          <label>Room Number</label>
+          <label for="room_number">Room Number</label>
           <input type="text" id="room_number" placeholder="e.g. Faculty Block Room 3" />
         </div>
         <div class="form-group">
-          <label>Cabin Number</label>
+          <label for="cabin_number">Cabin Number</label>
           <input type="text" id="cabin_number" placeholder="e.g. Cabin 5" />
         </div>
       </div>
-      <button class="btn btn-primary" onclick="addOffice()">➕ Add Office</button>
+      <button class="btn btn-primary" onclick="addOffice()">
+        <i data-lucide="plus"></i> Add Office
+      </button>
     </div>
 
-    <!-- Offices by Floor -->
+    <!-- Ground Floor -->
     <div class="card">
-      <h2>🏢 Ground Floor</h2>
-      <table>
-        <thead>
-          <tr>
-            <th>#</th>
-            <th>Teacher</th>
-            <th>Room</th>
-            <th>Cabin</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-        <tbody id="ground-floor-list">
-          <tr><td colspan="5">Loading...</td></tr>
-        </tbody>
-      </table>
+      <div class="card-header">
+        <h2><i data-lucide="building-2"></i> Ground Floor</h2>
+        <span id="gf-count" class="badge badge-gray">—</span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Teacher</th>
+              <th>Room</th>
+              <th>Cabin</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="ground-floor-list">
+            <tr><td colspan="5" class="empty-row">Loading…</td></tr>
+          </tbody>
+        </table>
+      </div>
     </div>
 
+    <!-- 1st Floor -->
     <div class="card">
-      <h2>🏢 1st Floor</h2>
-      <table>
-        <thead>
-          <tr>
-            <th>#</th>
-            <th>Teacher</th>
-            <th>Room</th>
-            <th>Cabin</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-        <tbody id="first-floor-list">
-          <tr><td colspan="5">Loading...</td></tr>
-        </tbody>
-      </table>
+      <div class="card-header">
+        <h2><i data-lucide="building-2"></i> 1st Floor</h2>
+        <span id="ff-count" class="badge badge-gray">—</span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Teacher</th>
+              <th>Room</th>
+              <th>Cabin</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="first-floor-list">
+            <tr><td colspan="5" class="empty-row">Loading…</td></tr>
+          </tbody>
+        </table>
+      </div>
     </div>
-
-
-
-  </div>
+  </main>
 
   <!-- Edit Modal -->
-  <div id="edit-modal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:999">
-    <div style="background:white;padding:30px;border-radius:12px;width:500px;margin:100px auto">
-      <h2 style="margin-bottom:20px">✏️ Edit Office</h2>
+  <div id="edit-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-label="Edit Office">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h3>Edit Office</h3>
+        <button class="modal-close" onclick="closeModal()" aria-label="Close">
+          <i data-lucide="x"></i>
+        </button>
+      </div>
       <input type="hidden" id="edit-id" />
       <div class="form-grid">
         <div class="form-group">
-          <label>Teacher</label>
+          <label for="edit-teacher_id">Teacher</label>
           <select id="edit-teacher_id">
-            <option value="">-- Select a Teacher --</option>
+            <option value="">Select a teacher</option>
           </select>
         </div>
         <div class="form-group">
-          <label>Floor</label>
+          <label for="edit-floor">Floor</label>
           <select id="edit-floor">
             <option value="Ground Floor">Ground Floor</option>
             <option value="1st Floor">1st Floor</option>
           </select>
         </div>
         <div class="form-group">
-          <label>Room Number</label>
+          <label for="edit-room">Room Number</label>
           <input type="text" id="edit-room" />
         </div>
         <div class="form-group">
-          <label>Cabin Number</label>
+          <label for="edit-cabin">Cabin Number</label>
           <input type="text" id="edit-cabin" />
         </div>
       </div>
-      <div style="display:flex;gap:10px;margin-top:15px">
-        <button class="btn btn-primary" onclick="saveEdit()">💾 Save</button>
-        <button class="btn btn-danger"  onclick="closeModal()">✖ Cancel</button>
+      <div class="modal-actions">
+        <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+        <button class="btn btn-primary" onclick="saveEdit()">
+          <i data-lucide="save"></i> Save Changes
+        </button>
       </div>
     </div>
   </div>
 
   <script>
+    const API = 'http://localhost:3000';
+
     window.onload = async () => {
       await loadTeachers();
       await loadOffices();
     };
 
+    // Close modal on overlay click
+    document.getElementById('edit-modal').addEventListener('click', function (e) {
+      if (e.target === this) closeModal();
+    });
+
+    // Close modal on Escape key
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') closeModal();
+    });
+
     async function loadTeachers() {
       try {
-        const response = await fetch('http://localhost:3000/teachers');
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        
-        const teachers = await response.json();
-        const sel1 = document.getElementById('teacher_id');
-        const sel2 = document.getElementById('edit-teacher_id');
-        
-        if (!sel1 || !sel2) {
-          console.error('Teacher dropdown elements not found');
-          return;
-        }
-        
-        if (!Array.isArray(teachers)) {
-          console.error('Teachers response is not an array:', teachers);
-          return;
-        }
-        
-        teachers.forEach(t => {
-          sel1.innerHTML += `<option value="${t.teacher_id}">${t.teacher_name}</option>`;
-          sel2.innerHTML += `<option value="${t.teacher_id}">${t.teacher_name}</option>`;
+        const res      = await fetch(`${API}/teachers`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const teachers = await res.json();
+        if (!Array.isArray(teachers)) return;
+
+        [document.getElementById('teacher_id'), document.getElementById('edit-teacher_id')].forEach(sel => {
+          teachers.forEach(t => {
+            sel.innerHTML += `<option value="${t.teacher_id}">${t.teacher_name}</option>`;
+          });
         });
-      } catch (err) {
-        console.error('Error loading teachers:', err);
-        alert('Error loading teachers: ' + err.message);
-      }
+      } catch (err) { showToast('Could not load teachers: ' + err.message, 'error'); }
     }
 
     async function loadOffices() {
-      const data = await fetch('http://localhost:3000/offices').then(r => r.json());
+      try {
+        const data = await fetch(`${API}/offices`).then(r => r.json());
+        const gf   = data.filter(o => o.floor === 'Ground Floor');
+        const ff   = data.filter(o => o.floor === '1st Floor');
 
-      renderFloor('ground-floor-list', data.filter(o => o.floor === 'Ground Floor'));
-      renderFloor('first-floor-list',  data.filter(o => o.floor === '1st Floor'));
+        document.getElementById('gf-count').textContent = `${gf.length} offices`;
+        document.getElementById('ff-count').textContent = `${ff.length} offices`;
+
+        renderFloor('ground-floor-list', gf);
+        renderFloor('first-floor-list', ff);
+      } catch { showToast('Could not load offices', 'error'); }
     }
 
     function renderFloor(tbodyId, data) {
@@ -176,64 +215,72 @@
       tbody.innerHTML = '';
 
       if (data.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#718096">No offices on this floor</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="5" class="empty-row">No offices on this floor</td></tr>';
         return;
       }
 
       data.forEach((o, i) => {
         tbody.innerHTML += `
           <tr>
-            <td>${i + 1}</td>
-            <td><strong>${o.teacher_name}</strong></td>
+            <td class="text-muted text-sm">${i + 1}</td>
+            <td><span class="font-medium">${o.teacher_name}</span></td>
             <td>${o.room_number}</td>
             <td>${o.cabin_number}</td>
-            <td style="display:flex;gap:8px">
-              <button class="btn btn-success" onclick="openEdit(${o.office_id},${o.teacher_id},'${o.floor}','${o.room_number}','${o.cabin_number}')">✏️ Edit</button>
-              <button class="btn btn-danger"  onclick="deleteOffice(${o.office_id})">🗑️</button>
+            <td>
+              <div class="td-actions">
+                <button class="btn btn-success" onclick="openEdit(${o.office_id}, ${o.teacher_id}, '${o.floor}', '${o.room_number}', '${o.cabin_number}')">
+                  <i data-lucide="pencil"></i> Edit
+                </button>
+                <button class="btn btn-danger" onclick="delOffice(${o.office_id})">
+                  <i data-lucide="trash-2"></i>
+                </button>
+              </div>
             </td>
-          </tr>
-        `;
+          </tr>`;
       });
+
+      if (window.lucide) lucide.createIcons();
     }
 
     async function addOffice() {
       const data = {
         teacher_id:   parseInt(document.getElementById('teacher_id').value),
         floor:        document.getElementById('floor').value,
-        room_number:  document.getElementById('room_number').value,
-        cabin_number: document.getElementById('cabin_number').value
+        room_number:  document.getElementById('room_number').value.trim(),
+        cabin_number: document.getElementById('cabin_number').value.trim(),
       };
-
       if (!data.teacher_id || !data.room_number || !data.cabin_number) {
-        alert('Please fill all fields!');
-        return;
+        showToast('Please fill in all fields', 'warning'); return;
       }
-
-      const res    = await fetch('http://localhost:3000/offices', {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify(data)
-      });
-      const result = await res.json();
-      alert(result.message);
-
-      document.getElementById('teacher_id').value = '';
-      document.getElementById('room_number').value  = '';
-      document.getElementById('cabin_number').value = '';
-      loadOffices();
+      try {
+        const res    = await fetch(`${API}/offices`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data)
+        });
+        const result = await res.json();
+        showToast(result.message || 'Office added', res.ok ? 'success' : 'error');
+        if (res.ok) {
+          document.getElementById('teacher_id').value  = '';
+          document.getElementById('room_number').value  = '';
+          document.getElementById('cabin_number').value = '';
+          loadOffices();
+        }
+      } catch { showToast('Failed to add office', 'error'); }
     }
 
     function openEdit(id, teacherId, floor, room, cabin) {
-      document.getElementById('edit-id').value           = id;
-      document.getElementById('edit-teacher_id').value  = teacherId;
-      document.getElementById('edit-floor').value       = floor;
-      document.getElementById('edit-room').value        = room;
-      document.getElementById('edit-cabin').value       = cabin;
-      document.getElementById('edit-modal').style.display = 'block';
+      document.getElementById('edit-id').value         = id;
+      document.getElementById('edit-teacher_id').value = teacherId;
+      document.getElementById('edit-floor').value      = floor;
+      document.getElementById('edit-room').value       = room;
+      document.getElementById('edit-cabin').value      = cabin;
+
+      const modal = document.getElementById('edit-modal');
+      modal.classList.add('open');
+      if (window.lucide) lucide.createIcons();
     }
 
     function closeModal() {
-      document.getElementById('edit-modal').style.display = 'none';
+      document.getElementById('edit-modal').classList.remove('open');
     }
 
     async function saveEdit() {
@@ -241,27 +288,29 @@
       const data = {
         teacher_id:   parseInt(document.getElementById('edit-teacher_id').value),
         floor:        document.getElementById('edit-floor').value,
-        room_number:  document.getElementById('edit-room').value,
-        cabin_number: document.getElementById('edit-cabin').value
+        room_number:  document.getElementById('edit-room').value.trim(),
+        cabin_number: document.getElementById('edit-cabin').value.trim(),
       };
-
-      const res    = await fetch(`http://localhost:3000/offices/${id}`, {
-        method:  'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify(data)
-      });
-      const result = await res.json();
-      alert(result.message);
-      closeModal();
-      loadOffices();
+      try {
+        const res    = await fetch(`${API}/offices/${id}`, {
+          method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data)
+        });
+        const result = await res.json();
+        showToast(result.message || 'Updated', res.ok ? 'success' : 'error');
+        closeModal();
+        loadOffices();
+      } catch { showToast('Failed to save changes', 'error'); }
     }
 
-    async function deleteOffice(id) {
-      if (!confirm('Delete this office?')) return;
-      const res    = await fetch(`http://localhost:3000/offices/${id}`, { method: 'DELETE' });
-      const result = await res.json();
-      alert(result.message);
-      loadOffices();
+    function delOffice(id) {
+      showConfirm('This office record will be permanently removed.', async () => {
+        try {
+          const res    = await fetch(`${API}/offices/${id}`, { method: 'DELETE' });
+          const result = await res.json();
+          showToast(result.message || 'Deleted', res.ok ? 'success' : 'error');
+          loadOffices();
+        } catch { showToast('Failed to delete office', 'error'); }
+      }, 'Delete Office');
     }
   </script>
 

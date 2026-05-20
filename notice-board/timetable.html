@@ -2,54 +2,73 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Notice Board - Timetable</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Notice Board — Timetable</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js" defer></script>
+  <script src="app.js" defer></script>
 </head>
 <body>
 
-  <div class="sidebar">
-    <h2>📋 Notice Board</h2>
-    <a href="index.html">🏠 Dashboard</a>
-    <a href="announcements.html">📢 Announcements</a>
-    <a href="timetable.html" class="active">📅 Timetable</a>
-    <a href="sessions.html">🎓 Sessions</a>
-    <a href="sections.html">👥 Sections</a>
-    <a href="subjects.html">📚 Subjects</a>
-    <a href="rooms.html">🏫 Rooms</a>
-    <a href="teachers.html">👨‍🏫 Teachers</a>
-    <a href="offices.html">🏢 Teacher Offices</a>
-  </div>
+  <nav class="sidebar">
+    <a class="sidebar-brand" href="index.html">
+      <div class="sidebar-brand-icon"><i data-lucide="clipboard-list"></i></div>
+      <span class="sidebar-brand-text">Notice Board</span>
+    </a>
+    <div class="sidebar-nav">
+      <a href="index.html"><i data-lucide="layout-dashboard"></i> Dashboard</a>
+      <a href="announcements.html"><i data-lucide="megaphone"></i> Announcements</a>
+      <a href="timetable.html" class="active"><i data-lucide="calendar-days"></i> Timetable</a>
+      <div class="sidebar-section-label">Data Management</div>
+      <a href="sessions.html"><i data-lucide="graduation-cap"></i> Sessions</a>
+      <a href="sections.html"><i data-lucide="users"></i> Sections</a>
+      <a href="subjects.html"><i data-lucide="book-open"></i> Subjects</a>
+      <a href="rooms.html"><i data-lucide="door-open"></i> Rooms</a>
+      <a href="teachers.html"><i data-lucide="user-square"></i> Teachers</a>
+      <a href="offices.html"><i data-lucide="building-2"></i> Teacher Offices</a>
+    </div>
+    <div class="sidebar-footer">Department Admin Panel</div>
+  </nav>
 
-  <div class="main">
-    <h1>Timetable</h1>
-    <p class="subtitle">View and manage class timetables</p>
+  <main class="main">
+    <div class="page-header">
+      <h1>Timetable</h1>
+      <p class="subtitle">View and manage class schedules</p>
+    </div>
 
     <!-- Filter -->
     <div class="card">
-      <h2>🔍 Filter Timetable</h2>
+      <div class="card-header">
+        <h2><i data-lucide="filter"></i> Filter</h2>
+      </div>
       <div class="form-grid">
         <div class="form-group">
-          <label>Session</label>
+          <label for="filter-session">Session</label>
           <select id="filter-session" onchange="onFilterSessionChange()">
-            <option value="">-- All Sessions --</option>
+            <option value="">All Sessions</option>
           </select>
         </div>
         <div class="form-group">
-          <label>Section</label>
+          <label for="filter-section">Section</label>
           <select id="filter-section" onchange="filterTimetable()">
-            <option value="">-- All Sections --</option>
+            <option value="">All Sections</option>
           </select>
         </div>
       </div>
     </div>
 
-    <!-- Add Entry Form -->
+    <!-- Add Entry -->
     <div class="card">
-      <h2>➕ Add Timetable Entry</h2>
-      <div class="form-grid">
+      <div class="card-header">
+        <h2><i data-lucide="plus-circle"></i> Add Timetable Entry</h2>
+      </div>
+      <div class="form-grid cols-4" style="grid-template-columns: repeat(3, 1fr);">
         <div class="form-group">
           <label>Session</label>
-          <select id="session_id" onchange="populateEntrySectionOptions(this.value)"></select>
+          <select id="session_id" onchange="populateEntrySections(this.value)"></select>
         </div>
         <div class="form-group">
           <label>Section</label>
@@ -80,36 +99,43 @@
           <input type="time" id="end_time" />
         </div>
         <div class="form-group">
-          <label>Duration (hours)</label>
-          <input type="number" id="duration_hours" min="1" max="4" value="1" readonly style="background-color: #f0f0f0;" />
+          <label>Duration (hrs)</label>
+          <input type="number" id="duration_hours" min="1" max="4" value="1" readonly />
         </div>
       </div>
-      <button class="btn btn-primary" onclick="addEntry()">➕ Add Entry</button>
+      <button class="btn btn-primary" onclick="addEntry()">
+        <i data-lucide="plus"></i> Add Entry
+      </button>
     </div>
 
-    <!-- Search Section -->
+    <!-- Search -->
     <div class="card">
-      <h2>🔎 Search Timetable</h2>
-      <div class="form-grid">
+      <div class="card-header">
+        <h2><i data-lucide="search"></i> Search</h2>
+      </div>
+      <div class="form-grid" style="grid-template-columns: repeat(3, 1fr);">
         <div class="form-group">
           <label>Subject</label>
-          <input type="text" id="search-subject" placeholder="Search subject..." onkeyup="searchTable()" />
+          <input type="text" id="search-subject" placeholder="Search subject…" oninput="searchTable()" />
         </div>
         <div class="form-group">
           <label>Teacher</label>
-          <input type="text" id="search-teacher" placeholder="Search teacher..." onkeyup="searchTable()" />
+          <input type="text" id="search-teacher" placeholder="Search teacher…" oninput="searchTable()" />
         </div>
         <div class="form-group">
           <label>Room</label>
-          <input type="text" id="search-room" placeholder="Search room..." onkeyup="searchTable()" />
+          <input type="text" id="search-room" placeholder="Search room…" oninput="searchTable()" />
         </div>
       </div>
     </div>
 
-    <!-- Timetable Table -->
+    <!-- Table -->
     <div class="card">
-      <h2>📅 Timetable Entries</h2>
-      <div style="overflow-x:auto">
+      <div class="card-header">
+        <h2><i data-lucide="calendar-days"></i> Timetable Entries</h2>
+        <span id="tt-count" class="badge badge-gray">—</span>
+      </div>
+      <div class="table-wrap">
         <table>
           <thead>
             <tr>
@@ -125,17 +151,16 @@
             </tr>
           </thead>
           <tbody id="timetable-list">
-            <tr><td colspan="9">Loading...</td></tr>
+            <tr><td colspan="9" class="empty-row">Loading…</td></tr>
           </tbody>
         </table>
       </div>
     </div>
-  </div>
+  </main>
 
   <script>
-    let allData     = [];
-    let allSessions = [];
-    let allSections = [];
+    const API = 'http://localhost:3000';
+    let allData = [];
 
     window.onload = async () => {
       await loadDropdowns();
@@ -143,196 +168,146 @@
     };
 
     async function loadDropdowns() {
-      // Sessions
-      allSessions = await fetch('http://localhost:3000/sessions').then(r => r.json());
-      const sessionIdSelect = document.getElementById('session_id');
-      const filterSessionSelect = document.getElementById('filter-session');
+      const [sessions, days, subjects, rooms, teachers] = await Promise.all([
+        fetch(`${API}/sessions`).then(r => r.json()),
+        fetch(`${API}/days`).then(r => r.json()),
+        fetch(`${API}/subjects`).then(r => r.json()),
+        fetch(`${API}/rooms`).then(r => r.json()),
+        fetch(`${API}/teachers`).then(r => r.json()),
+      ]);
 
-      allSessions.forEach(s => {
-        sessionIdSelect.innerHTML += `<option value="${s.session_id}">${s.session_name}</option>`;
-        filterSessionSelect.innerHTML += `<option value="${s.session_id}">${s.session_name}</option>`;
+      const sessEl = document.getElementById('session_id');
+      const filtSess = document.getElementById('filter-session');
+      sessions.forEach(s => {
+        sessEl.innerHTML    += `<option value="${s.session_id}">${s.session_name}</option>`;
+        filtSess.innerHTML  += `<option value="${s.session_id}">${s.session_name}</option>`;
       });
 
-      // Initial section dropdowns
-      if (sessionIdSelect.value) {
-        await populateEntrySectionOptions(sessionIdSelect.value);
-      }
-      await populateFilterSectionOptions('');
+      if (sessEl.value) await populateEntrySections(sessEl.value);
+      await populateFilterSections('');
 
-      // Days
-      const days = await fetch('http://localhost:3000/days').then(r => r.json());
-      const daySel = document.getElementById('day_id');
       days.forEach(d => {
-        daySel.innerHTML += `<option value="${d.day_id}">${d.day_name}</option>`;
+        document.getElementById('day_id').innerHTML += `<option value="${d.day_id}">${d.day_name}</option>`;
       });
-
-      // Subjects
-      const subjects = await fetch('http://localhost:3000/subjects').then(r => r.json());
-      const subSel = document.getElementById('subject_id');
       subjects.forEach(s => {
-        subSel.innerHTML += `<option value="${s.subject_id}">${s.subject_name} (${s.subject_code})</option>`;
+        document.getElementById('subject_id').innerHTML += `<option value="${s.subject_id}">${s.subject_name} (${s.subject_code})</option>`;
       });
-
-      // Rooms
-      const rooms = await fetch('http://localhost:3000/rooms').then(r => r.json());
-      const roomSel = document.getElementById('room_id');
       rooms.forEach(r => {
-        roomSel.innerHTML += `<option value="${r.room_id}">${r.room_number}</option>`;
+        document.getElementById('room_id').innerHTML += `<option value="${r.room_id}">${r.room_number}</option>`;
       });
-
-      // Teachers
-      const teachers = await fetch('http://localhost:3000/teachers').then(r => r.json());
-      const teacherSel = document.getElementById('teacher_id');
       teachers.forEach(t => {
-        teacherSel.innerHTML += `<option value="${t.teacher_id}">${t.teacher_name}</option>`;
+        document.getElementById('teacher_id').innerHTML += `<option value="${t.teacher_id}">${t.teacher_name}</option>`;
       });
 
-      // Add event listeners for auto-calculating duration
-      document.getElementById('start_time').addEventListener('change', calculateDuration);
-      document.getElementById('end_time').addEventListener('change', calculateDuration);
+      document.getElementById('start_time').addEventListener('change', calcDuration);
+      document.getElementById('end_time').addEventListener('change', calcDuration);
     }
 
-    function calculateDuration() {
-      const startTime = document.getElementById('start_time').value;
-      const endTime = document.getElementById('end_time').value;
-
-      if (startTime && endTime) {
-        const [startHour, startMin] = startTime.split(':').map(Number);
-        const [endHour, endMin] = endTime.split(':').map(Number);
-
-        const startTotalMin = startHour * 60 + startMin;
-        const endTotalMin = endHour * 60 + endMin;
-
-        if (endTotalMin > startTotalMin) {
-          const durationMin = endTotalMin - startTotalMin;
-          const durationHours = (durationMin / 60).toFixed(2);
-          document.getElementById('duration_hours').value = parseFloat(durationHours);
-        } else {
-          alert('End time must be after start time!');
-          document.getElementById('end_time').value = '';
-          document.getElementById('duration_hours').value = '1';
-        }
+    function calcDuration() {
+      const s = document.getElementById('start_time').value;
+      const e = document.getElementById('end_time').value;
+      if (!s || !e) return;
+      const [sh, sm] = s.split(':').map(Number);
+      const [eh, em] = e.split(':').map(Number);
+      const diff = (eh * 60 + em) - (sh * 60 + sm);
+      if (diff <= 0) {
+        showToast('End time must be after start time', 'warning');
+        document.getElementById('end_time').value = '';
+        document.getElementById('duration_hours').value = '1';
+        return;
       }
+      document.getElementById('duration_hours').value = parseFloat((diff / 60).toFixed(2));
     }
 
     async function loadTimetable() {
-      allData = await fetch('http://localhost:3000/timetable').then(r => r.json());
+      allData = await fetch(`${API}/timetable`).then(r => r.json());
       renderTable(allData);
-    }
-
-    function filterTimetable() {
-      const sessionFilter = document.getElementById('filter-session').value;
-      const sectionFilter = document.getElementById('filter-section').value;
-
-      let filtered = allData;
-
-      if (sessionFilter) {
-        filtered = filtered.filter(t => t.session_id == sessionFilter);
-      }
-
-      if (sectionFilter) {
-        filtered = filtered.filter(t => t.section_id == sectionFilter);
-      }
-
-      renderTable(filtered);
-    }
-
-    async function onFilterSessionChange() {
-      const sessionFilter = document.getElementById('filter-session').value;
-      await populateFilterSectionOptions(sessionFilter);
-      filterTimetable();
-    }
-
-    async function populateEntrySectionOptions(sessionId) {
-      const sectionSelect = document.getElementById('section_id');
-      sectionSelect.innerHTML = '<option value="">-- Select Section --</option>';
-
-      if (!sessionId) return;
-
-      const sections = await fetch(`http://localhost:3000/sections/${sessionId}`).then(r => r.json());
-      sections.forEach(s => {
-        sectionSelect.innerHTML += `<option value="${s.section_id}">${s.section_name}</option>`;
-      });
-    }
-
-    async function populateFilterSectionOptions(sessionId) {
-      const filterSelect = document.getElementById('filter-section');
-      filterSelect.innerHTML = '<option value="">-- All Sections --</option>';
-      const url = sessionId ? `http://localhost:3000/sections/${sessionId}` : 'http://localhost:3000/sections';
-      const sections = await fetch(url).then(r => r.json());
-      const added = new Set();
-
-      sections.forEach(s => {
-        if (added.has(s.section_id)) return;
-        added.add(s.section_id);
-        const label = sessionId ? s.section_name : `${s.session_name} - ${s.section_name}`;
-        filterSelect.innerHTML += `<option value="${s.section_id}">${label}</option>`;
-      });
     }
 
     function renderTable(data) {
       const tbody = document.getElementById('timetable-list');
+      document.getElementById('tt-count').textContent = `${data.length} entries`;
       tbody.innerHTML = '';
 
       if (data.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#718096">No entries found</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="9" class="empty-row">No entries found</td></tr>';
         return;
       }
 
       data.forEach((t, i) => {
         tbody.innerHTML += `
           <tr>
-            <td>${i + 1}</td>
-            <td>${t.session_name}</td>
-            <td><strong>${t.section_name}</strong></td>
+            <td class="text-muted text-sm">${i + 1}</td>
+            <td class="text-muted text-sm">${t.session_name}</td>
+            <td><span class="font-medium">${t.section_name}</span></td>
             <td>${t.day_name}</td>
-            <td>${t.start_time} - ${t.end_time}</td>
-            <td>${t.subject_name}<br>
-              <small style="color:#718096">${t.subject_code}</small>
+            <td class="text-sm" style="font-variant-numeric:tabular-nums">${t.start_time} – ${t.end_time}</td>
+            <td>
+              <span class="font-medium">${t.subject_name}</span><br>
+              <span class="text-muted text-sm">${t.subject_code}</span>
             </td>
             <td>${t.teacher_name}</td>
-            <td>${t.room_number}</td>
+            <td><span class="font-medium">${t.room_number}</span></td>
             <td>
-              <button class="btn btn-danger" onclick="deleteEntry(${t.timetable_id})">🗑️</button>
+              <button class="btn btn-danger" onclick="delEntry(${t.timetable_id})">
+                <i data-lucide="trash-2"></i>
+              </button>
             </td>
-          </tr>
-        `;
+          </tr>`;
+      });
+      if (window.lucide) lucide.createIcons();
+    }
+
+    function filterTimetable() {
+      const sf = document.getElementById('filter-session').value;
+      const cf = document.getElementById('filter-section').value;
+      let d = allData;
+      if (sf) d = d.filter(t => t.session_id == sf);
+      if (cf) d = d.filter(t => t.section_id == cf);
+      renderTable(d);
+    }
+
+    async function onFilterSessionChange() {
+      await populateFilterSections(document.getElementById('filter-session').value);
+      filterTimetable();
+    }
+
+    async function populateEntrySections(sessionId) {
+      const sel = document.getElementById('section_id');
+      sel.innerHTML = '<option value="">Select section</option>';
+      if (!sessionId) return;
+      const s = await fetch(`${API}/sections/${sessionId}`).then(r => r.json());
+      s.forEach(x => sel.innerHTML += `<option value="${x.section_id}">${x.section_name}</option>`);
+    }
+
+    async function populateFilterSections(sessionId) {
+      const sel = document.getElementById('filter-section');
+      sel.innerHTML = '<option value="">All Sections</option>';
+      const url = sessionId ? `${API}/sections/${sessionId}` : `${API}/sections`;
+      const s = await fetch(url).then(r => r.json());
+      const seen = new Set();
+      s.forEach(x => {
+        if (seen.has(x.section_id)) return;
+        seen.add(x.section_id);
+        const label = sessionId ? x.section_name : `${x.session_name} — ${x.section_name}`;
+        sel.innerHTML += `<option value="${x.section_id}">${label}</option>`;
       });
     }
 
     function searchTable() {
-      const subjectFilter = document.getElementById('search-subject').value.toLowerCase();
-      const teacherFilter = document.getElementById('search-teacher').value.toLowerCase();
-      const roomFilter = document.getElementById('search-room').value.toLowerCase();
+      const sub  = document.getElementById('search-subject').value.toLowerCase();
+      const tch  = document.getElementById('search-teacher').value.toLowerCase();
+      const rm   = document.getElementById('search-room').value.toLowerCase();
+      const sf   = document.getElementById('filter-session').value;
+      const cf   = document.getElementById('filter-section').value;
 
-      let filtered = allData;
-
-      if (subjectFilter) {
-        filtered = filtered.filter(t => t.subject_name.toLowerCase().includes(subjectFilter) || 
-                                         t.subject_code.toLowerCase().includes(subjectFilter));
-      }
-
-      if (teacherFilter) {
-        filtered = filtered.filter(t => t.teacher_name.toLowerCase().includes(teacherFilter));
-      }
-
-      if (roomFilter) {
-        filtered = filtered.filter(t => t.room_number.toLowerCase().includes(roomFilter));
-      }
-
-      // Apply existing filters as well
-      const sessionFilter = document.getElementById('filter-session').value;
-      const sectionFilter = document.getElementById('filter-section').value;
-
-      if (sessionFilter) {
-        filtered = filtered.filter(t => t.session_id == sessionFilter);
-      }
-
-      if (sectionFilter) {
-        filtered = filtered.filter(t => t.section_id == sectionFilter);
-      }
-
-      renderTable(filtered);
+      let d = allData;
+      if (sub) d = d.filter(t => t.subject_name.toLowerCase().includes(sub) || t.subject_code.toLowerCase().includes(sub));
+      if (tch) d = d.filter(t => t.teacher_name.toLowerCase().includes(tch));
+      if (rm)  d = d.filter(t => t.room_number.toLowerCase().includes(rm));
+      if (sf)  d = d.filter(t => t.session_id == sf);
+      if (cf)  d = d.filter(t => t.section_id == cf);
+      renderTable(d);
     }
 
     async function addEntry() {
@@ -345,41 +320,36 @@
         teacher_id:     document.getElementById('teacher_id').value,
         start_time:     document.getElementById('start_time').value,
         end_time:       document.getElementById('end_time').value,
-        duration_hours: document.getElementById('duration_hours').value
+        duration_hours: document.getElementById('duration_hours').value,
       };
-
       if (!data.teacher_id || !data.start_time || !data.end_time || !data.room_id) {
-        alert('Please fill all fields!');
-        return;
+        showToast('Please fill in all required fields', 'warning'); return;
       }
-
-      const res  = await fetch('http://localhost:3000/timetable', {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify(data)
-      });
-      const result = await res.json();
-      alert(result.message);
-      
-      if (result.success) {
-        // Clear form
-        document.getElementById('start_time').value = '';
-        document.getElementById('end_time').value = '';
-        document.getElementById('duration_hours').value = '1';
-        // Clear search filters
-        document.getElementById('search-subject').value = '';
-        document.getElementById('search-teacher').value = '';
-        document.getElementById('search-room').value = '';
-        loadTimetable();
-      }
+      try {
+        const res    = await fetch(`${API}/timetable`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data)
+        });
+        const result = await res.json();
+        showToast(result.message || 'Entry added', result.success ? 'success' : 'error');
+        if (result.success) {
+          ['start_time','end_time','search-subject','search-teacher','search-room'].forEach(id => {
+            document.getElementById(id).value = '';
+          });
+          document.getElementById('duration_hours').value = '1';
+          loadTimetable();
+        }
+      } catch { showToast('Failed to add entry', 'error'); }
     }
 
-    async function deleteEntry(id) {
-      if (!confirm('Delete this timetable entry?')) return;
-      const res  = await fetch(`http://localhost:3000/timetable/${id}`, { method: 'DELETE' });
-      const data = await res.json();
-      alert(data.message);
-      loadTimetable();
+    function delEntry(id) {
+      showConfirm('This timetable entry will be permanently removed.', async () => {
+        try {
+          const res = await fetch(`${API}/timetable/${id}`, { method: 'DELETE' });
+          const d   = await res.json();
+          showToast(d.message || 'Deleted', res.ok ? 'success' : 'error');
+          loadTimetable();
+        } catch { showToast('Failed to delete entry', 'error'); }
+      }, 'Delete Timetable Entry');
     }
   </script>
 

@@ -2,126 +2,159 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Notice Board - Sections</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Notice Board — Sections</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js" defer></script>
+  <script src="app.js" defer></script>
 </head>
 <body>
 
-  <div class="sidebar">
-    <h2>📋 Notice Board</h2>
-    <a href="index.html">🏠 Dashboard</a>
-    <a href="announcements.html">📢 Announcements</a>
-    <a href="timetable.html">📅 Timetable</a>
-    <a href="sessions.html">🎓 Sessions</a>
-    <a href="sections.html" class="active">👥 Sections</a>
-    <a href="subjects.html">📚 Subjects</a>
-    <a href="rooms.html">🏫 Rooms</a>
-    <a href="offices.html">🏢 Teacher Offices</a>
-  </div>
+  <nav class="sidebar">
+    <a class="sidebar-brand" href="index.html">
+      <div class="sidebar-brand-icon"><i data-lucide="clipboard-list"></i></div>
+      <span class="sidebar-brand-text">Notice Board</span>
+    </a>
+    <div class="sidebar-nav">
+      <a href="index.html"><i data-lucide="layout-dashboard"></i> Dashboard</a>
+      <a href="announcements.html"><i data-lucide="megaphone"></i> Announcements</a>
+      <a href="timetable.html"><i data-lucide="calendar-days"></i> Timetable</a>
+      <div class="sidebar-section-label">Data Management</div>
+      <a href="sessions.html"><i data-lucide="graduation-cap"></i> Sessions</a>
+      <a href="sections.html" class="active"><i data-lucide="users"></i> Sections</a>
+      <a href="subjects.html"><i data-lucide="book-open"></i> Subjects</a>
+      <a href="rooms.html"><i data-lucide="door-open"></i> Rooms</a>
+      <a href="teachers.html"><i data-lucide="user-square"></i> Teachers</a>
+      <a href="offices.html"><i data-lucide="building-2"></i> Teacher Offices</a>
+    </div>
+    <div class="sidebar-footer">Department Admin Panel</div>
+  </nav>
 
-  <div class="main">
-    <h1>Sections</h1>
-    <p class="subtitle">Manage class sections</p>
+  <main class="main">
+    <div class="page-header">
+      <h1>Sections</h1>
+      <p class="subtitle">Manage class sections per session</p>
+    </div>
 
     <div class="card">
-      <h2>➕ Add New Section</h2>
+      <div class="card-header">
+        <h2><i data-lucide="plus-circle"></i> Add New Section</h2>
+      </div>
       <div class="form-grid">
         <div class="form-group">
-          <label>Session</label>
+          <label for="session_id">Session</label>
           <select id="session_id"></select>
         </div>
         <div class="form-group">
-          <label>Section Name</label>
+          <label for="section_name">Section Name</label>
           <input type="text" id="section_name" placeholder="e.g. A, B, C" />
         </div>
       </div>
-      <button class="btn btn-primary" onclick="addSection()">➕ Add Section</button>
+      <button class="btn btn-primary" onclick="addSection()">
+        <i data-lucide="plus"></i> Add Section
+      </button>
     </div>
 
     <div class="card">
-      <h2>👥 All Sections</h2>
-      <table>
-        <thead>
-          <tr>
-            <th>#</th>
-            <th>Session</th>
-            <th>Section</th>
-            <th>Action</th>
-          </tr>
-        </thead>
-        <tbody id="sections-list">
-          <tr><td colspan="4">Loading...</td></tr>
-        </tbody>
-      </table>
+      <div class="card-header">
+        <h2><i data-lucide="users"></i> All Sections</h2>
+        <span id="sec-count" class="badge badge-gray">—</span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Session</th>
+              <th>Section</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody id="sections-list">
+            <tr><td colspan="4" class="empty-row">Loading…</td></tr>
+          </tbody>
+        </table>
+      </div>
     </div>
-  </div>
+  </main>
 
   <script>
+    const API = 'http://localhost:3000';
+
     window.onload = async () => {
       await loadSessionDropdown();
       await loadSections();
     };
 
     async function loadSessionDropdown() {
-      const sessions = await fetch('http://localhost:3000/sessions').then(r => r.json());
-      const sel      = document.getElementById('session_id');
+      const sessions = await fetch(`${API}/sessions`).then(r => r.json());
+      const sel = document.getElementById('session_id');
       sessions.forEach(s => {
         sel.innerHTML += `<option value="${s.session_id}">${s.session_name}</option>`;
       });
     }
 
     async function loadSections() {
-      const data  = await fetch('http://localhost:3000/sections').then(r => r.json());
-      const tbody = document.getElementById('sections-list');
-      tbody.innerHTML = '';
+      try {
+        const data  = await fetch(`${API}/sections`).then(r => r.json());
+        const tbody = document.getElementById('sections-list');
+        document.getElementById('sec-count').textContent = `${data.length} sections`;
+        tbody.innerHTML = '';
 
-      if (data.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#718096">No sections yet</td></tr>';
-        return;
-      }
+        if (data.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="4" class="empty-row">No sections yet</td></tr>';
+          return;
+        }
 
-      data.forEach((s, i) => {
-        tbody.innerHTML += `
-          <tr>
-            <td>${i + 1}</td>
-            <td>${s.session_name}</td>
-            <td><strong>${s.section_name}</strong></td>
-            <td>
-              <button class="btn btn-danger" onclick="deleteSection(${s.section_id})">🗑️ Delete</button>
-            </td>
-          </tr>
-        `;
-      });
+        data.forEach((s, i) => {
+          tbody.innerHTML += `
+            <tr>
+              <td class="text-muted text-sm">${i + 1}</td>
+              <td class="text-muted">${s.session_name}</td>
+              <td><span class="font-medium">${s.section_name}</span></td>
+              <td>
+                <button class="btn btn-danger" onclick="delSection(${s.section_id})">
+                  <i data-lucide="trash-2"></i> Delete
+                </button>
+              </td>
+            </tr>`;
+        });
+        if (window.lucide) lucide.createIcons();
+      } catch { showToast('Could not load sections', 'error'); }
     }
 
     async function addSection() {
       const data = {
         session_id:   document.getElementById('session_id').value,
-        section_name: document.getElementById('section_name').value.trim()
+        section_name: document.getElementById('section_name').value.trim(),
       };
+      if (!data.section_name) { showToast('Please enter a section name', 'warning'); return; }
 
-      if (!data.section_name) {
-        alert('Please enter section name!');
-        return;
-      }
-
-      const res    = await fetch('http://localhost:3000/sections', {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify(data)
-      });
-      const result = await res.json();
-      alert(result.message);
-      document.getElementById('section_name').value = '';
-      loadSections();
+      try {
+        const res    = await fetch(`${API}/sections`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data)
+        });
+        const result = await res.json();
+        showToast(result.message || 'Section added', res.ok ? 'success' : 'error');
+        if (res.ok) {
+          document.getElementById('section_name').value = '';
+          loadSections();
+        }
+      } catch { showToast('Failed to add section', 'error'); }
     }
 
-    async function deleteSection(id) {
-      if (!confirm('Delete this section?')) return;
-      const res    = await fetch(`http://localhost:3000/sections/${id}`, { method: 'DELETE' });
-      const result = await res.json();
-      alert(result.message);
-      loadSections();
+    function delSection(id) {
+      showConfirm('This section will be permanently removed.', async () => {
+        try {
+          const res    = await fetch(`${API}/sections/${id}`, { method: 'DELETE' });
+          const result = await res.json();
+          showToast(result.message || 'Deleted', res.ok ? 'success' : 'error');
+          loadSections();
+        } catch { showToast('Failed to delete section', 'error'); }
+      }, 'Delete Section');
     }
   </script>
 

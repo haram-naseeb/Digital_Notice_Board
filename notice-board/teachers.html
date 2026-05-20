@@ -2,136 +2,148 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Notice Board - Teachers</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Notice Board — Teachers</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js" defer></script>
+  <script src="app.js" defer></script>
 </head>
 <body>
 
-  <div class="sidebar">
-    <h2>📋 Notice Board</h2>
-    <a href="index.html">🏠 Dashboard</a>
-    <a href="announcements.html">📢 Announcements</a>
-    <a href="timetable.html">📅 Timetable</a>
-    <a href="sessions.html">🎓 Sessions</a>
-    <a href="sections.html">👥 Sections</a>
-    <a href="subjects.html">📚 Subjects</a>
-    <a href="rooms.html">🏫 Rooms</a>
-    <a href="teachers.html" class="active">👨‍🏫 Teachers</a>
-    <a href="offices.html">🏢 Teacher Offices</a>
-  </div>
+  <nav class="sidebar">
+    <a class="sidebar-brand" href="index.html">
+      <div class="sidebar-brand-icon"><i data-lucide="clipboard-list"></i></div>
+      <span class="sidebar-brand-text">Notice Board</span>
+    </a>
+    <div class="sidebar-nav">
+      <a href="index.html"><i data-lucide="layout-dashboard"></i> Dashboard</a>
+      <a href="announcements.html"><i data-lucide="megaphone"></i> Announcements</a>
+      <a href="timetable.html"><i data-lucide="calendar-days"></i> Timetable</a>
+      <div class="sidebar-section-label">Data Management</div>
+      <a href="sessions.html"><i data-lucide="graduation-cap"></i> Sessions</a>
+      <a href="sections.html"><i data-lucide="users"></i> Sections</a>
+      <a href="subjects.html"><i data-lucide="book-open"></i> Subjects</a>
+      <a href="rooms.html"><i data-lucide="door-open"></i> Rooms</a>
+      <a href="teachers.html" class="active"><i data-lucide="user-square"></i> Teachers</a>
+      <a href="offices.html"><i data-lucide="building-2"></i> Teacher Offices</a>
+    </div>
+    <div class="sidebar-footer">Department Admin Panel</div>
+  </nav>
 
-  <div class="main">
-    <h1>Teachers</h1>
-    <p class="subtitle">Manage teacher list</p>
+  <main class="main">
+    <div class="page-header">
+      <h1>Teachers</h1>
+      <p class="subtitle">Manage the teacher roster</p>
+    </div>
 
     <div class="card">
-      <h2>➕ Add New Teacher</h2>
+      <div class="card-header">
+        <h2><i data-lucide="plus-circle"></i> Add New Teacher</h2>
+      </div>
       <div class="form-grid">
         <div class="form-group">
-          <label>Teacher Name</label>
+          <label for="teacher_name">Full Name</label>
           <input type="text" id="teacher_name" placeholder="e.g. Dr. Ayesha Altaf" />
         </div>
       </div>
-      <button class="btn btn-primary" onclick="addTeacher()">➕ Add Teacher</button>
+      <button class="btn btn-primary" onclick="addTeacher()">
+        <i data-lucide="plus"></i> Add Teacher
+      </button>
     </div>
 
     <div class="card">
-      <h2>👨‍🏫 All Teachers</h2>
-      <table>
-        <thead>
-          <tr>
-            <th>#</th>
-            <th>Teacher ID</th>
-            <th>Name</th>
-            <th>Action</th>
-          </tr>
-        </thead>
-        <tbody id="teachers-list">
-          <tr><td colspan="4">Loading...</td></tr>
-        </tbody>
-      </table>
+      <div class="card-header">
+        <h2><i data-lucide="user-square"></i> All Teachers</h2>
+        <span id="tch-count" class="badge badge-gray">—</span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>ID</th>
+              <th>Name</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody id="teachers-list">
+            <tr><td colspan="4" class="empty-row">Loading…</td></tr>
+          </tbody>
+        </table>
+      </div>
     </div>
-  </div>
+  </main>
 
   <script>
-    window.onload = async () => {
-      await loadTeachers();
-    };
+    const API = 'http://localhost:3000';
+
+    window.onload = loadTeachers;
 
     async function loadTeachers() {
       try {
-        const data  = await fetch('http://localhost:3000/teachers').then(r => r.json());
+        const data  = await fetch(`${API}/teachers`).then(r => r.json());
         const tbody = document.getElementById('teachers-list');
+        document.getElementById('tch-count').textContent = `${data.length} teachers`;
         tbody.innerHTML = '';
 
         if (data.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#718096">No teachers yet</td></tr>';
+          tbody.innerHTML = '<tr><td colspan="4" class="empty-row">No teachers yet</td></tr>';
           return;
         }
 
         data.forEach((t, i) => {
           tbody.innerHTML += `
             <tr>
-              <td>${i + 1}</td>
-              <td><strong>${t.teacher_id}</strong></td>
-              <td>${t.teacher_name}</td>
+              <td class="text-muted text-sm">${i + 1}</td>
+              <td class="text-muted text-sm">${t.teacher_id}</td>
+              <td><span class="font-medium">${t.teacher_name}</span></td>
               <td>
-                <button class="btn btn-danger" onclick="deleteTeacher(${t.teacher_id})">🗑️ Delete</button>
+                <button class="btn btn-danger" onclick="delTeacher(${t.teacher_id})">
+                  <i data-lucide="trash-2"></i> Delete
+                </button>
               </td>
-            </tr>
-          `;
+            </tr>`;
         });
-      } catch (err) {
-        alert('Error loading teachers: ' + err.message);
-      }
+        if (window.lucide) lucide.createIcons();
+      } catch (err) { showToast('Could not load teachers: ' + err.message, 'error'); }
     }
 
     async function addTeacher() {
       const name = document.getElementById('teacher_name').value.trim();
-      
-      if (!name) {
-        alert('Please enter teacher name');
-        return;
-      }
+      if (!name) { showToast('Please enter a teacher name', 'warning'); return; }
 
       try {
-        const res = await fetch('http://localhost:3000/teachers', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+        const res    = await fetch(`${API}/teachers`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ teacher_name: name })
         });
         const result = await res.json();
-        
         if (res.ok) {
-          alert('Teacher added successfully!');
+          showToast('Teacher added successfully', 'success');
           document.getElementById('teacher_name').value = '';
-          await loadTeachers();
+          loadTeachers();
         } else {
-          alert('Error: ' + (result.error || 'Failed to add teacher'));
+          showToast(result.error || 'Failed to add teacher', 'error');
         }
-      } catch (err) {
-        alert('Error: ' + err.message);
-      }
+      } catch (err) { showToast('Error: ' + err.message, 'error'); }
     }
 
-    async function deleteTeacher(teacherId) {
-      if (!confirm('Are you sure you want to delete this teacher?')) return;
-
-      try {
-        const res = await fetch(`http://localhost:3000/teachers/${teacherId}`, {
-          method: 'DELETE'
-        });
-        
-        if (res.ok) {
-          alert('Teacher deleted successfully!');
-          await loadTeachers();
-        } else {
-          const result = await res.json();
-          alert('Error: ' + (result.error || 'Failed to delete teacher'));
-        }
-      } catch (err) {
-        alert('Error: ' + err.message);
-      }
+    function delTeacher(id) {
+      showConfirm('This teacher will be permanently removed from the system.', async () => {
+        try {
+          const res = await fetch(`${API}/teachers/${id}`, { method: 'DELETE' });
+          if (res.ok) {
+            showToast('Teacher deleted successfully', 'success');
+            loadTeachers();
+          } else {
+            const r = await res.json();
+            showToast(r.error || 'Failed to delete teacher', 'error');
+          }
+        } catch (err) { showToast('Error: ' + err.message, 'error'); }
+      }, 'Delete Teacher');
     }
   </script>
 

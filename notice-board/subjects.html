@@ -2,112 +2,150 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Notice Board - Subjects</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Notice Board — Subjects</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js" defer></script>
+  <script src="app.js" defer></script>
 </head>
 <body>
 
-  <div class="sidebar">
-    <h2>📋 Notice Board</h2>
-    <a href="index.html">🏠 Dashboard</a>
-    <a href="announcements.html">📢 Announcements</a>
-    <a href="timetable.html">📅 Timetable</a>
-    <a href="sessions.html">🎓 Sessions</a>
-    <a href="sections.html">👥 Sections</a>
-    <a href="subjects.html" class="active">📚 Subjects</a>
-    <a href="rooms.html">🏫 Rooms</a>
-    <a href="teachers.html">👨‍🏫 Teachers</a>
-    <a href="offices.html">🏢 Teacher Offices</a>
-  </div>
+  <nav class="sidebar">
+    <a class="sidebar-brand" href="index.html">
+      <div class="sidebar-brand-icon"><i data-lucide="clipboard-list"></i></div>
+      <span class="sidebar-brand-text">Notice Board</span>
+    </a>
+    <div class="sidebar-nav">
+      <a href="index.html"><i data-lucide="layout-dashboard"></i> Dashboard</a>
+      <a href="announcements.html"><i data-lucide="megaphone"></i> Announcements</a>
+      <a href="timetable.html"><i data-lucide="calendar-days"></i> Timetable</a>
+      <div class="sidebar-section-label">Data Management</div>
+      <a href="sessions.html"><i data-lucide="graduation-cap"></i> Sessions</a>
+      <a href="sections.html"><i data-lucide="users"></i> Sections</a>
+      <a href="subjects.html" class="active"><i data-lucide="book-open"></i> Subjects</a>
+      <a href="rooms.html"><i data-lucide="door-open"></i> Rooms</a>
+      <a href="teachers.html"><i data-lucide="user-square"></i> Teachers</a>
+      <a href="offices.html"><i data-lucide="building-2"></i> Teacher Offices</a>
+    </div>
+    <div class="sidebar-footer">Department Admin Panel</div>
+  </nav>
 
-  <div class="main">
-    <h1>Subjects</h1>
-    <p class="subtitle">Manage department subjects</p>
+  <main class="main">
+    <div class="page-header">
+      <h1>Subjects</h1>
+      <p class="subtitle">Manage department subjects</p>
+    </div>
 
     <div class="card">
-      <h2>➕ Add New Subject</h2>
+      <div class="card-header">
+        <h2><i data-lucide="plus-circle"></i> Add New Subject</h2>
+      </div>
       <div class="form-grid">
         <div class="form-group">
-          <label>Subject Name</label>
+          <label for="subject_name">Subject Name</label>
           <input type="text" id="subject_name" placeholder="e.g. Computer Networks" />
         </div>
         <div class="form-group">
-          <label>Subject Code</label>
-          <input type="text" id="subject_code" placeholder="e.g. CN" />
+          <label for="subject_code">Subject Code</label>
+          <input type="text" id="subject_code" placeholder="e.g. CN-401" />
         </div>
       </div>
-      <button class="btn btn-primary" onclick="addSubject()">➕ Add Subject</button>
+      <button class="btn btn-primary" onclick="addSubject()">
+        <i data-lucide="plus"></i> Add Subject
+      </button>
     </div>
 
     <div class="card">
-      <h2>📚 All Subjects</h2>
-      <table>
-        <thead>
-          <tr>
-            <th>#</th>
-            <th>Subject Name</th>
-            <th>Code</th>
-            <th>Action</th>
-          </tr>
-        </thead>
-        <tbody id="subjects-list">
-          <tr><td colspan="4">Loading...</td></tr>
-        </tbody>
-      </table>
+      <div class="card-header">
+        <h2><i data-lucide="book-open"></i> All Subjects</h2>
+        <span id="subj-count" class="badge badge-gray">—</span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Subject Name</th>
+              <th>Code</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody id="subjects-list">
+            <tr><td colspan="4" class="empty-row">Loading…</td></tr>
+          </tbody>
+        </table>
+      </div>
     </div>
-  </div>
+  </main>
 
   <script>
+    const API = 'http://localhost:3000';
+
     window.onload = loadSubjects;
 
     async function loadSubjects() {
-      const data  = await fetch('http://localhost:3000/subjects').then(r => r.json());
-      const tbody = document.getElementById('subjects-list');
-      tbody.innerHTML = '';
+      try {
+        const data  = await fetch(`${API}/subjects`).then(r => r.json());
+        const tbody = document.getElementById('subjects-list');
+        document.getElementById('subj-count').textContent = `${data.length} subjects`;
+        tbody.innerHTML = '';
 
-      data.forEach((s, i) => {
-        tbody.innerHTML += `
-          <tr>
-            <td>${i + 1}</td>
-            <td>${s.subject_name}</td>
-            <td><strong>${s.subject_code}</strong></td>
-            <td>
-              <button class="btn btn-danger" onclick="deleteSubject(${s.subject_id})">🗑️ Delete</button>
-            </td>
-          </tr>
-        `;
-      });
+        if (data.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="4" class="empty-row">No subjects yet</td></tr>';
+          return;
+        }
+
+        data.forEach((s, i) => {
+          tbody.innerHTML += `
+            <tr>
+              <td class="text-muted text-sm">${i + 1}</td>
+              <td><span class="font-medium">${s.subject_name}</span></td>
+              <td><span class="badge badge-blue">${s.subject_code}</span></td>
+              <td>
+                <button class="btn btn-danger" onclick="delSubject(${s.subject_id})">
+                  <i data-lucide="trash-2"></i> Delete
+                </button>
+              </td>
+            </tr>`;
+        });
+        if (window.lucide) lucide.createIcons();
+      } catch { showToast('Could not load subjects', 'error'); }
     }
 
     async function addSubject() {
       const data = {
-        subject_name: document.getElementById('subject_name').value,
-        subject_code: document.getElementById('subject_code').value
+        subject_name: document.getElementById('subject_name').value.trim(),
+        subject_code: document.getElementById('subject_code').value.trim(),
       };
-
       if (!data.subject_name || !data.subject_code) {
-        alert('Please fill all fields!');
-        return;
+        showToast('Please fill in all fields', 'warning'); return;
       }
-
-      const res    = await fetch('http://localhost:3000/subjects', {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify(data)
-      });
-      const result = await res.json();
-      alert(result.message);
-      document.getElementById('subject_name').value = '';
-      document.getElementById('subject_code').value = '';
-      loadSubjects();
+      try {
+        const res    = await fetch(`${API}/subjects`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data)
+        });
+        const result = await res.json();
+        showToast(result.message || 'Subject added', res.ok ? 'success' : 'error');
+        if (res.ok) {
+          document.getElementById('subject_name').value = '';
+          document.getElementById('subject_code').value = '';
+          loadSubjects();
+        }
+      } catch { showToast('Failed to add subject', 'error'); }
     }
 
-    async function deleteSubject(id) {
-      if (!confirm('Delete this subject?')) return;
-      const res    = await fetch(`http://localhost:3000/subjects/${id}`, { method: 'DELETE' });
-      const result = await res.json();
-      alert(result.message);
-      loadSubjects();
+    function delSubject(id) {
+      showConfirm('This subject will be permanently removed.', async () => {
+        try {
+          const res    = await fetch(`${API}/subjects/${id}`, { method: 'DELETE' });
+          const result = await res.json();
+          showToast(result.message || 'Deleted', res.ok ? 'success' : 'error');
+          loadSubjects();
+        } catch { showToast('Failed to delete subject', 'error'); }
+      }, 'Delete Subject');
     }
   </script>
 

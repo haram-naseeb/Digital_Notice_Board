@@ -2,110 +2,178 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Notice Board - Dashboard</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Notice Board — Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js" defer></script>
+  <script src="app.js" defer></script>
 </head>
 <body>
 
-  <!-- Sidebar -->
-  <div class="sidebar">
-    <h2>📋 Notice Board</h2>
-    <a href="index.html" class="active">🏠 Dashboard</a>
-    <a href="announcements.html">📢 Announcements</a>
-    <a href="timetable.html">📅 Timetable</a>
-    <a href="sessions.html">🎓 Sessions</a>
-    <a href="sections.html">👥 Sections</a>
-    <a href="subjects.html">📚 Subjects</a>
-    <a href="rooms.html">🏫 Rooms</a>
-    <a href="teachers.html">👨‍🏫 Teachers</a>
-    <a href="offices.html">🏢 Teacher Offices</a>
-  </div>
+  <!-- ── Sidebar ─────────────────────────────────────────── -->
+  <nav class="sidebar">
+    <a class="sidebar-brand" href="index.html">
+      <div class="sidebar-brand-icon">
+        <i data-lucide="clipboard-list"></i>
+      </div>
+      <span class="sidebar-brand-text">Notice Board</span>
+    </a>
+    <div class="sidebar-nav">
+      <a href="index.html" class="active">
+        <i data-lucide="layout-dashboard"></i> Dashboard
+      </a>
+      <a href="announcements.html">
+        <i data-lucide="megaphone"></i> Announcements
+      </a>
+      <a href="timetable.html">
+        <i data-lucide="calendar-days"></i> Timetable
+      </a>
+      <div class="sidebar-section-label">Data Management</div>
+      <a href="sessions.html">
+        <i data-lucide="graduation-cap"></i> Sessions
+      </a>
+      <a href="sections.html">
+        <i data-lucide="users"></i> Sections
+      </a>
+      <a href="subjects.html">
+        <i data-lucide="book-open"></i> Subjects
+      </a>
+      <a href="rooms.html">
+        <i data-lucide="door-open"></i> Rooms
+      </a>
+      <a href="teachers.html">
+        <i data-lucide="user-square"></i> Teachers
+      </a>
+      <a href="offices.html">
+        <i data-lucide="building-2"></i> Teacher Offices
+      </a>
+    </div>
+    <div class="sidebar-footer">Department Admin Panel</div>
+  </nav>
 
-  <!-- Main Content -->
-  <div class="main">
-    <h1>Dashboard</h1>
-    <p class="subtitle">Welcome to Department Notice Board Admin Panel</p>
+  <!-- ── Main ─────────────────────────────────────────────── -->
+  <main class="main">
+    <div class="page-header">
+      <h1>Dashboard</h1>
+      <p class="subtitle">Overview of department activity</p>
+    </div>
 
-    <!-- Stats -->
+    <!-- Stat cards -->
     <div class="stats">
       <div class="stat-card">
-        <h3 id="total-announcements">0</h3>
-        <p>Total Announcements</p>
+        <div class="stat-card-value" id="total-announcements">—</div>
+        <div class="stat-card-label">Total Announcements</div>
       </div>
-      <div class="stat-card urgent">
-        <h3 id="pending-count">0</h3>
-        <p>Pending Approval</p>
+      <div class="stat-card stat-orange">
+        <div class="stat-card-value" id="pending-count">—</div>
+        <div class="stat-card-label">Pending Approval</div>
       </div>
-      <div class="stat-card event">
-        <h3 id="sessions-count">0</h3>
-        <p>Active Sessions</p>
+      <div class="stat-card stat-green">
+        <div class="stat-card-value" id="sessions-count">—</div>
+        <div class="stat-card-label">Active Sessions</div>
       </div>
-      <div class="stat-card rooms">
-        <h3 id="rooms-count">0</h3>
-        <p>Total Rooms</p>
+      <div class="stat-card stat-purple">
+        <div class="stat-card-value" id="rooms-count">—</div>
+        <div class="stat-card-label">Total Rooms</div>
       </div>
     </div>
 
     <!-- Recent Announcements -->
     <div class="card">
-      <h2>📢 Recent Announcements</h2>
-      <table>
-        <thead>
-          <tr>
-            <th>Title</th>
-            <th>Category</th>
-            <th>Status</th>
-            <th>Created</th>
-            <th>Action</th>
-          </tr>
-        </thead>
-        <tbody id="recent-list">
-          <tr><td colspan="5">Loading...</td></tr>
-        </tbody>
-      </table>
+      <div class="card-header">
+        <h2>
+          <i data-lucide="megaphone"></i>
+          Recent Announcements
+        </h2>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Title</th>
+              <th>Category</th>
+              <th>Status</th>
+              <th>Created</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody id="recent-list">
+            <tr><td colspan="5" class="empty-row">Loading...</td></tr>
+          </tbody>
+        </table>
+      </div>
     </div>
-  </div>
+  </main>
 
   <script>
+    const API = 'http://localhost:3000';
+
+    const CATEGORY_BADGE = {
+      general: 'badge-blue',
+      urgent:  'badge-red',
+      event:   'badge-purple',
+    };
+    const STATUS_BADGE = {
+      pending:  'badge-amber',
+      approved: 'badge-green',
+    };
+
     async function loadDashboard() {
-      // Load announcements
-      const ann = await fetch('http://localhost:3000/announcements').then(r => r.json());
-      document.getElementById('total-announcements').textContent = ann.length;
-      document.getElementById('pending-count').textContent = ann.filter(a => a.status === 'pending').length;
+      try {
+        const [ann, sess, rooms] = await Promise.all([
+          fetch(`${API}/announcements`).then(r => r.json()),
+          fetch(`${API}/sessions`).then(r => r.json()),
+          fetch(`${API}/rooms`).then(r => r.json()),
+        ]);
 
-      // Load sessions
-      const sess = await fetch('http://localhost:3000/sessions').then(r => r.json());
-      document.getElementById('sessions-count').textContent = sess.length;
+        document.getElementById('total-announcements').textContent = ann.length;
+        document.getElementById('pending-count').textContent = ann.filter(a => a.status === 'pending').length;
+        document.getElementById('sessions-count').textContent = sess.length;
+        document.getElementById('rooms-count').textContent = rooms.length;
 
-      // Load rooms
-      const rooms = await fetch('http://localhost:3000/rooms').then(r => r.json());
-      document.getElementById('rooms-count').textContent = rooms.length;
+        const tbody = document.getElementById('recent-list');
+        tbody.innerHTML = '';
 
-      // Recent announcements table
-      const tbody = document.getElementById('recent-list');
-      tbody.innerHTML = '';
-      ann.slice(0, 10).forEach(a => {
-        tbody.innerHTML += `
-          <tr>
-            <td>${a.title}</td>
-            <td><span class="tag tag-${a.category}">${a.category}</span></td>
-            <td><span class="tag tag-${a.status}">${a.status}</span></td>
-            <td>${new Date(a.created_at).toLocaleDateString()}</td>
-            <td>
-              ${a.status === 'pending' ?
-                `<button class="btn btn-success" onclick="approve(${a.announcement_id})">✅ Approve</button>` :
-                '✅ Approved'}
-            </td>
-          </tr>
-        `;
-      });
+        if (ann.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="5" class="empty-row">No announcements yet</td></tr>';
+          return;
+        }
+
+        ann.slice(0, 10).forEach(a => {
+          const catClass = CATEGORY_BADGE[a.category] || 'badge-gray';
+          const stClass  = STATUS_BADGE[a.status]    || 'badge-gray';
+          tbody.innerHTML += `
+            <tr>
+              <td><span class="font-medium">${a.title}</span></td>
+              <td><span class="badge ${catClass}">${a.category}</span></td>
+              <td><span class="badge ${stClass}">${a.status}</span></td>
+              <td class="text-muted text-sm">${new Date(a.created_at).toLocaleDateString()}</td>
+              <td>
+                ${a.status === 'pending'
+                  ? `<button class="btn btn-success" onclick="approve(${a.announcement_id})">Approve</button>`
+                  : '<span class="badge badge-green">Approved</span>'}
+              </td>
+            </tr>`;
+        });
+
+        if (window.lucide) lucide.createIcons();
+      } catch (err) {
+        showToast('Failed to connect to server. Is it running?', 'error');
+      }
     }
 
     async function approve(id) {
-      const res = await fetch(`http://localhost:3000/announcements/approve/${id}`, { method: 'POST' });
-      const data = await res.json();
-      alert(data.message);
-      loadDashboard();
+      try {
+        const res = await fetch(`${API}/announcements/approve/${id}`, { method: 'POST' });
+        const data = await res.json();
+        showToast(data.message || 'Approved successfully', 'success');
+        loadDashboard();
+      } catch {
+        showToast('Failed to approve announcement', 'error');
+      }
     }
 
     loadDashboard();
