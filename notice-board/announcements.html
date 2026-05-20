@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Notice Board - Announcements</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <div class="sidebar">
+    <h2>📋 Notice Board</h2>
+    <a href="index.html">🏠 Dashboard</a>
+    <a href="announcements.html" class="active">📢 Announcements</a>
+    <a href="timetable.html">📅 Timetable</a>
+    <a href="sessions.html">🎓 Sessions</a>
+    <a href="sections.html">👥 Sections</a>
+    <a href="subjects.html">📚 Subjects</a>
+    <a href="rooms.html">🏫 Rooms</a>
+    <a href="teachers.html">👨‍🏫 Teachers</a>
+    <a href="offices.html">🏢 Teacher Offices</a>
+  </div>
+
+  <div class="main">
+    <h1>Announcements</h1>
+    <p class="subtitle">Add and manage department announcements</p>
+
+    <!-- Add Announcement Form -->
+    <div class="card">
+      <h2>➕ Add New Announcement</h2>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Title</label>
+          <input type="text" id="title" placeholder="Announcement title" />
+        </div>
+        <div class="form-group">
+          <label>Category</label>
+          <select id="category">
+            <option value="general">📢 General</option>
+            <option value="urgent">🚨 Urgent</option>
+            <option value="event">🎉 Event</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Start Date & Time</label>
+          <input type="datetime-local" id="start_datetime" />
+        </div>
+        <div class="form-group">
+          <label>End Date & Time</label>
+          <input type="datetime-local" id="end_datetime" />
+        </div>
+        <div class="form-group full">
+          <label>Message</label>
+          <textarea id="message" placeholder="Type announcement message here..."></textarea>
+        </div>
+      </div>
+      <button class="btn btn-primary" onclick="addAnnouncement()">📤 Submit Announcement</button>
+    </div>
+
+    <!-- Announcements Table -->
+    <div class="card">
+      <h2>📋 All Announcements</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Title</th>
+            <th>Message</th>
+            <th>Category</th>
+            <th>Start</th>
+            <th>End</th>
+            <th>Status</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="announcements-list">
+          <tr><td colspan="8">Loading...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <script>
+    window.onload = () => {
+      loadAnnouncements();
+      // Auto-refresh every 30 seconds to sync with server deletions
+      setInterval(loadAnnouncements, 30000);
+      console.log('⏰ Auto-refresh enabled - syncing every 30 seconds');
+    };
+
+    async function loadAnnouncements() {
+      const res  = await fetch('http://localhost:3000/announcements');
+      const data = await res.json();
+      const tbody = document.getElementById('announcements-list');
+      tbody.innerHTML = '';
+
+      // Filter: Only show non-expired announcements (Solution 3)
+      const now = new Date();
+      const active = data.filter(a => new Date(a.end_datetime) > now);
+
+      if (active.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#718096">No active announcements</td></tr>';
+        return;
+      }
+
+      active.forEach((a, i) => {
+        // Add visual indicator for announcements expiring soon (within 5 minutes)
+        const timeLeft = new Date(a.end_datetime) - now;
+        const expiringIndicator = timeLeft < 300000 ? '⏰ ' : '';
+        
+        tbody.innerHTML += `
+          <tr>
+            <td>${i + 1}</td>
+            <td><strong>${expiringIndicator}${a.title}</strong></td>
+            <td>${a.message ? a.message.substring(0, 40) + '...' : '-'}</td>
+            <td><span class="tag tag-${a.category}">${a.category}</span></td>
+            <td>${formatDate(a.start_datetime)}</td>
+            <td>${formatDate(a.end_datetime)}</td>
+            <td><span class="tag tag-${a.status}">${a.status}</span></td>
+            <td style="display:flex;gap:8px">
+              ${a.status === 'pending' ?
+                `<button class="btn btn-success" onclick="approve(${a.announcement_id})">✅ Approve</button>` :
+                '<span style="color:#48bb78">✅ Sent</span>'}
+              <button class="btn btn-danger" onclick="deleteAnnouncement(${a.announcement_id})">🗑️</button>
+            </td>
+          </tr>
+        `;
+      });
+    }
+
+    async function addAnnouncement() {
+      const title          = document.getElementById('title').value;
+      const message        = document.getElementById('message').value;
+      const category       = document.getElementById('category').value;
+      const start_datetime = document.getElementById('start_datetime').value;
+      const end_datetime   = document.getElementById('end_datetime').value;
+
+      if (!title || !message || !start_datetime || !end_datetime) {
+        alert('Please fill all fields!');
+        return;
+      }
+
+      const res  = await fetch('http://localhost:3000/announcements', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ title, message, category, start_datetime, end_datetime })
+      });
+      const data = await res.json();
+      alert(data.message);
+
+      // Clear form
+      document.getElementById('title').value          = '';
+      document.getElementById('message').value        = '';
+      document.getElementById('start_datetime').value = '';
+      document.getElementById('end_datetime').value   = '';
+
+      loadAnnouncements();
+    }
+
+    async function approve(id) {
+      const res  = await fetch(`http://localhost:3000/announcements/approve/${id}`, { method: 'POST' });
+      const data = await res.json();
+      alert(data.message);
+      loadAnnouncements();
+    }
+
+    async function deleteAnnouncement(id) {
+      if (!confirm('Delete this announcement?')) return;
+      const res  = await fetch(`http://localhost:3000/announcements/${id}`, { method: 'DELETE' });
+      const data = await res.json();
+      alert(data.message);
+      loadAnnouncements();
+    }
+
+    function formatDate(dt) {
+      if (!dt) return '-';
+      return new Date(dt).toLocaleString();
+    }
+  </script>
+
+</body>
+</html>

@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Notice Board - Subjects</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <div class="sidebar">
+    <h2>📋 Notice Board</h2>
+    <a href="index.html">🏠 Dashboard</a>
+    <a href="announcements.html">📢 Announcements</a>
+    <a href="timetable.html">📅 Timetable</a>
+    <a href="sessions.html">🎓 Sessions</a>
+    <a href="sections.html">👥 Sections</a>
+    <a href="subjects.html" class="active">📚 Subjects</a>
+    <a href="rooms.html">🏫 Rooms</a>
+    <a href="teachers.html">👨‍🏫 Teachers</a>
+    <a href="offices.html">🏢 Teacher Offices</a>
+  </div>
+
+  <div class="main">
+    <h1>Subjects</h1>
+    <p class="subtitle">Manage department subjects</p>
+
+    <div class="card">
+      <h2>➕ Add New Subject</h2>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Subject Name</label>
+          <input type="text" id="subject_name" placeholder="e.g. Computer Networks" />
+        </div>
+        <div class="form-group">
+          <label>Subject Code</label>
+          <input type="text" id="subject_code" placeholder="e.g. CN" />
+        </div>
+      </div>
+      <button class="btn btn-primary" onclick="addSubject()">➕ Add Subject</button>
+    </div>
+
+    <div class="card">
+      <h2>📚 All Subjects</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Subject Name</th>
+            <th>Code</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody id="subjects-list">
+          <tr><td colspan="4">Loading...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <script>
+    window.onload = loadSubjects;
+
+    async function loadSubjects() {
+      const data  = await fetch('http://localhost:3000/subjects').then(r => r.json());
+      const tbody = document.getElementById('subjects-list');
+      tbody.innerHTML = '';
+
+      data.forEach((s, i) => {
+        tbody.innerHTML += `
+          <tr>
+            <td>${i + 1}</td>
+            <td>${s.subject_name}</td>
+            <td><strong>${s.subject_code}</strong></td>
+            <td>
+              <button class="btn btn-danger" onclick="deleteSubject(${s.subject_id})">🗑️ Delete</button>
+            </td>
+          </tr>
+        `;
+      });
+    }
+
+    async function addSubject() {
+      const data = {
+        subject_name: document.getElementById('subject_name').value,
+        subject_code: document.getElementById('subject_code').value
+      };
+
+      if (!data.subject_name || !data.subject_code) {
+        alert('Please fill all fields!');
+        return;
+      }
+
+      const res    = await fetch('http://localhost:3000/subjects', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify(data)
+      });
+      const result = await res.json();
+      alert(result.message);
+      document.getElementById('subject_name').value = '';
+      document.getElementById('subject_code').value = '';
+      loadSubjects();
+    }
+
+    async function deleteSubject(id) {
+      if (!confirm('Delete this subject?')) return;
+      const res    = await fetch(`http://localhost:3000/subjects/${id}`, { method: 'DELETE' });
+      const result = await res.json();
+      alert(result.message);
+      loadSubjects();
+    }
+  </script>
+
+</body>
+</html>

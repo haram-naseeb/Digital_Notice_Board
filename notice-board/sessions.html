@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Notice Board - Sessions</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <div class="sidebar">
+    <h2>📋 Notice Board</h2>
+    <a href="index.html">🏠 Dashboard</a>
+    <a href="announcements.html">📢 Announcements</a>
+    <a href="timetable.html">📅 Timetable</a>
+    <a href="sessions.html" class="active">🎓 Sessions</a>
+    <a href="sections.html">👥 Sections</a>
+    <a href="subjects.html">📚 Subjects</a>
+    <a href="rooms.html">🏫 Rooms</a>
+    <a href="teachers.html">👨‍🏫 Teachers</a>
+    <a href="offices.html">🏢 Teacher Offices</a>
+  </div>
+
+  <div class="main">
+    <h1>Sessions</h1>
+    <p class="subtitle">Manage semester sessions</p>
+
+    <div class="card">
+      <h2>➕ Add New Session</h2>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Session Name</label>
+          <input type="text" id="session_name" placeholder="e.g. 25 Fall Morning" />
+        </div>
+        <div class="form-group">
+          <label>Year</label>
+          <input type="number" id="year" placeholder="e.g. 2025" />
+        </div>
+        <div class="form-group">
+          <label>Term</label>
+          <select id="term">
+            <option value="Fall">Fall</option>
+            <option value="Spring">Spring</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Semester</label>
+          <input type="number" id="semester" placeholder="e.g. 4" min="1" max="8" />
+        </div>
+      </div>
+      <button class="btn btn-primary" onclick="addSession()">➕ Add Session</button>
+    </div>
+
+    <div class="card">
+      <h2>🎓 All Sessions</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Session Name</th>
+            <th>Year</th>
+            <th>Term</th>
+            <th>Semester</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody id="sessions-list">
+          <tr><td colspan="6">Loading...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <script>
+    window.onload = loadSessions;
+
+    async function loadSessions() {
+      const data  = await fetch('http://localhost:3000/sessions').then(r => r.json());
+      const tbody = document.getElementById('sessions-list');
+      tbody.innerHTML = '';
+
+      if (data.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#718096">No sessions yet</td></tr>';
+        return;
+      }
+
+      data.forEach((s, i) => {
+        tbody.innerHTML += `
+          <tr>
+            <td>${i + 1}</td>
+            <td><strong>${s.session_name}</strong></td>
+            <td>${s.year}</td>
+            <td>${s.term}</td>
+            <td>Semester ${s.semester}</td>
+            <td>
+              <button class="btn btn-danger" onclick="deleteSession(${s.session_id})">🗑️ Delete</button>
+            </td>
+          </tr>
+        `;
+      });
+    }
+
+    async function addSession() {
+      const data = {
+        session_name: document.getElementById('session_name').value,
+        year:         document.getElementById('year').value,
+        term:         document.getElementById('term').value,
+        semester:     document.getElementById('semester').value
+      };
+
+      if (!data.session_name || !data.year || !data.semester) {
+        alert('Please fill all fields!');
+        return;
+      }
+
+      const res    = await fetch('http://localhost:3000/sessions', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify(data)
+      });
+      const result = await res.json();
+      alert(result.message);
+
+      document.getElementById('session_name').value = '';
+      document.getElementById('year').value         = '';
+      document.getElementById('semester').value     = '';
+      loadSessions();
+    }
+
+    async function deleteSession(id) {
+      if (!confirm('Delete this session? This will also delete all related timetable entries!')) return;
+      const res    = await fetch(`http://localhost:3000/sessions/${id}`, { method: 'DELETE' });
+      const result = await res.json();
+      alert(result.message);
+      loadSessions();
+    }
+  </script>
+
+</body>
+</html>

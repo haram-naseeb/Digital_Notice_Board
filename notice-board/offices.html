@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Notice Board - Teacher Offices</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <div class="sidebar">
+    <h2>📋 Notice Board</h2>
+    <a href="index.html">🏠 Dashboard</a>
+    <a href="announcements.html">📢 Announcements</a>
+    <a href="timetable.html">📅 Timetable</a>
+    <a href="sessions.html">🎓 Sessions</a>
+    <a href="sections.html">👥 Sections</a>
+    <a href="subjects.html">📚 Subjects</a>
+    <a href="rooms.html">🏫 Rooms</a>
+    <a href="teachers.html">👨‍🏫 Teachers</a>
+    <a href="offices.html" class="active">🏢 Teacher Offices</a>
+  </div>
+
+  <div class="main">
+    <h1>Teacher Offices</h1>
+    <p class="subtitle">Manage teacher office locations</p>
+
+    <!-- Add Form -->
+    <div class="card">
+      <h2>➕ Add Teacher Office</h2>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Teacher</label>
+          <select id="teacher_id">
+            <option value="">-- Select a Teacher --</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Floor</label>
+          <select id="floor">
+            <option value="Ground Floor">Ground Floor</option>
+            <option value="1st Floor">1st Floor</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Room Number</label>
+          <input type="text" id="room_number" placeholder="e.g. Faculty Block Room 3" />
+        </div>
+        <div class="form-group">
+          <label>Cabin Number</label>
+          <input type="text" id="cabin_number" placeholder="e.g. Cabin 5" />
+        </div>
+      </div>
+      <button class="btn btn-primary" onclick="addOffice()">➕ Add Office</button>
+    </div>
+
+    <!-- Offices by Floor -->
+    <div class="card">
+      <h2>🏢 Ground Floor</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Teacher</th>
+            <th>Room</th>
+            <th>Cabin</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="ground-floor-list">
+          <tr><td colspan="5">Loading...</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="card">
+      <h2>🏢 1st Floor</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Teacher</th>
+            <th>Room</th>
+            <th>Cabin</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="first-floor-list">
+          <tr><td colspan="5">Loading...</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+
+
+  </div>
+
+  <!-- Edit Modal -->
+  <div id="edit-modal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:999">
+    <div style="background:white;padding:30px;border-radius:12px;width:500px;margin:100px auto">
+      <h2 style="margin-bottom:20px">✏️ Edit Office</h2>
+      <input type="hidden" id="edit-id" />
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Teacher</label>
+          <select id="edit-teacher_id">
+            <option value="">-- Select a Teacher --</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Floor</label>
+          <select id="edit-floor">
+            <option value="Ground Floor">Ground Floor</option>
+            <option value="1st Floor">1st Floor</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Room Number</label>
+          <input type="text" id="edit-room" />
+        </div>
+        <div class="form-group">
+          <label>Cabin Number</label>
+          <input type="text" id="edit-cabin" />
+        </div>
+      </div>
+      <div style="display:flex;gap:10px;margin-top:15px">
+        <button class="btn btn-primary" onclick="saveEdit()">💾 Save</button>
+        <button class="btn btn-danger"  onclick="closeModal()">✖ Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    window.onload = async () => {
+      await loadTeachers();
+      await loadOffices();
+    };
+
+    async function loadTeachers() {
+      try {
+        const response = await fetch('http://localhost:3000/teachers');
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        
+        const teachers = await response.json();
+        const sel1 = document.getElementById('teacher_id');
+        const sel2 = document.getElementById('edit-teacher_id');
+        
+        if (!sel1 || !sel2) {
+          console.error('Teacher dropdown elements not found');
+          return;
+        }
+        
+        if (!Array.isArray(teachers)) {
+          console.error('Teachers response is not an array:', teachers);
+          return;
+        }
+        
+        teachers.forEach(t => {
+          sel1.innerHTML += `<option value="${t.teacher_id}">${t.teacher_name}</option>`;
+          sel2.innerHTML += `<option value="${t.teacher_id}">${t.teacher_name}</option>`;
+        });
+      } catch (err) {
+        console.error('Error loading teachers:', err);
+        alert('Error loading teachers: ' + err.message);
+      }
+    }
+
+    async function loadOffices() {
+      const data = await fetch('http://localhost:3000/offices').then(r => r.json());
+
+      renderFloor('ground-floor-list', data.filter(o => o.floor === 'Ground Floor'));
+      renderFloor('first-floor-list',  data.filter(o => o.floor === '1st Floor'));
+    }
+
+    function renderFloor(tbodyId, data) {
+      const tbody = document.getElementById(tbodyId);
+      tbody.innerHTML = '';
+
+      if (data.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#718096">No offices on this floor</td></tr>';
+        return;
+      }
+
+      data.forEach((o, i) => {
+        tbody.innerHTML += `
+          <tr>
+            <td>${i + 1}</td>
+            <td><strong>${o.teacher_name}</strong></td>
+            <td>${o.room_number}</td>
+            <td>${o.cabin_number}</td>
+            <td style="display:flex;gap:8px">
+              <button class="btn btn-success" onclick="openEdit(${o.office_id},${o.teacher_id},'${o.floor}','${o.room_number}','${o.cabin_number}')">✏️ Edit</button>
+              <button class="btn btn-danger"  onclick="deleteOffice(${o.office_id})">🗑️</button>
+            </td>
+          </tr>
+        `;
+      });
+    }
+
+    async function addOffice() {
+      const data = {
+        teacher_id:   parseInt(document.getElementById('teacher_id').value),
+        floor:        document.getElementById('floor').value,
+        room_number:  document.getElementById('room_number').value,
+        cabin_number: document.getElementById('cabin_number').value
+      };
+
+      if (!data.teacher_id || !data.room_number || !data.cabin_number) {
+        alert('Please fill all fields!');
+        return;
+      }
+
+      const res    = await fetch('http://localhost:3000/offices', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify(data)
+      });
+      const result = await res.json();
+      alert(result.message);
+
+      document.getElementById('teacher_id').value = '';
+      document.getElementById('room_number').value  = '';
+      document.getElementById('cabin_number').value = '';
+      loadOffices();
+    }
+
+    function openEdit(id, teacherId, floor, room, cabin) {
+      document.getElementById('edit-id').value           = id;
+      document.getElementById('edit-teacher_id').value  = teacherId;
+      document.getElementById('edit-floor').value       = floor;
+      document.getElementById('edit-room').value        = room;
+      document.getElementById('edit-cabin').value       = cabin;
+      document.getElementById('edit-modal').style.display = 'block';
+    }
+
+    function closeModal() {
+      document.getElementById('edit-modal').style.display = 'none';
+    }
+
+    async function saveEdit() {
+      const id   = document.getElementById('edit-id').value;
+      const data = {
+        teacher_id:   parseInt(document.getElementById('edit-teacher_id').value),
+        floor:        document.getElementById('edit-floor').value,
+        room_number:  document.getElementById('edit-room').value,
+        cabin_number: document.getElementById('edit-cabin').value
+      };
+
+      const res    = await fetch(`http://localhost:3000/offices/${id}`, {
+        method:  'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify(data)
+      });
+      const result = await res.json();
+      alert(result.message);
+      closeModal();
+      loadOffices();
+    }
+
+    async function deleteOffice(id) {
+      if (!confirm('Delete this office?')) return;
+      const res    = await fetch(`http://localhost:3000/offices/${id}`, { method: 'DELETE' });
+      const result = await res.json();
+      alert(result.message);
+      loadOffices();
+    }
+  </script>
+
+</body>
+</html>

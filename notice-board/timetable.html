@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Notice Board - Timetable</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <div class="sidebar">
+    <h2>📋 Notice Board</h2>
+    <a href="index.html">🏠 Dashboard</a>
+    <a href="announcements.html">📢 Announcements</a>
+    <a href="timetable.html" class="active">📅 Timetable</a>
+    <a href="sessions.html">🎓 Sessions</a>
+    <a href="sections.html">👥 Sections</a>
+    <a href="subjects.html">📚 Subjects</a>
+    <a href="rooms.html">🏫 Rooms</a>
+    <a href="teachers.html">👨‍🏫 Teachers</a>
+    <a href="offices.html">🏢 Teacher Offices</a>
+  </div>
+
+  <div class="main">
+    <h1>Timetable</h1>
+    <p class="subtitle">View and manage class timetables</p>
+
+    <!-- Filter -->
+    <div class="card">
+      <h2>🔍 Filter Timetable</h2>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Session</label>
+          <select id="filter-session" onchange="onFilterSessionChange()">
+            <option value="">-- All Sessions --</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Section</label>
+          <select id="filter-section" onchange="filterTimetable()">
+            <option value="">-- All Sections --</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <!-- Add Entry Form -->
+    <div class="card">
+      <h2>➕ Add Timetable Entry</h2>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Session</label>
+          <select id="session_id" onchange="populateEntrySectionOptions(this.value)"></select>
+        </div>
+        <div class="form-group">
+          <label>Section</label>
+          <select id="section_id"></select>
+        </div>
+        <div class="form-group">
+          <label>Day</label>
+          <select id="day_id"></select>
+        </div>
+        <div class="form-group">
+          <label>Subject</label>
+          <select id="subject_id"></select>
+        </div>
+        <div class="form-group">
+          <label>Room</label>
+          <select id="room_id"></select>
+        </div>
+        <div class="form-group">
+          <label>Teacher</label>
+          <select id="teacher_id"></select>
+        </div>
+        <div class="form-group">
+          <label>Start Time</label>
+          <input type="time" id="start_time" />
+        </div>
+        <div class="form-group">
+          <label>End Time</label>
+          <input type="time" id="end_time" />
+        </div>
+        <div class="form-group">
+          <label>Duration (hours)</label>
+          <input type="number" id="duration_hours" min="1" max="4" value="1" readonly style="background-color: #f0f0f0;" />
+        </div>
+      </div>
+      <button class="btn btn-primary" onclick="addEntry()">➕ Add Entry</button>
+    </div>
+
+    <!-- Search Section -->
+    <div class="card">
+      <h2>🔎 Search Timetable</h2>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Subject</label>
+          <input type="text" id="search-subject" placeholder="Search subject..." onkeyup="searchTable()" />
+        </div>
+        <div class="form-group">
+          <label>Teacher</label>
+          <input type="text" id="search-teacher" placeholder="Search teacher..." onkeyup="searchTable()" />
+        </div>
+        <div class="form-group">
+          <label>Room</label>
+          <input type="text" id="search-room" placeholder="Search room..." onkeyup="searchTable()" />
+        </div>
+      </div>
+    </div>
+
+    <!-- Timetable Table -->
+    <div class="card">
+      <h2>📅 Timetable Entries</h2>
+      <div style="overflow-x:auto">
+        <table>
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Session</th>
+              <th>Section</th>
+              <th>Day</th>
+              <th>Time</th>
+              <th>Subject</th>
+              <th>Teacher</th>
+              <th>Room</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody id="timetable-list">
+            <tr><td colspan="9">Loading...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let allData     = [];
+    let allSessions = [];
+    let allSections = [];
+
+    window.onload = async () => {
+      await loadDropdowns();
+      await loadTimetable();
+    };
+
+    async function loadDropdowns() {
+      // Sessions
+      allSessions = await fetch('http://localhost:3000/sessions').then(r => r.json());
+      const sessionIdSelect = document.getElementById('session_id');
+      const filterSessionSelect = document.getElementById('filter-session');
+
+      allSessions.forEach(s => {
+        sessionIdSelect.innerHTML += `<option value="${s.session_id}">${s.session_name}</option>`;
+        filterSessionSelect.innerHTML += `<option value="${s.session_id}">${s.session_name}</option>`;
+      });
+
+      // Initial section dropdowns
+      if (sessionIdSelect.value) {
+        await populateEntrySectionOptions(sessionIdSelect.value);
+      }
+      await populateFilterSectionOptions('');
+
+      // Days
+      const days = await fetch('http://localhost:3000/days').then(r => r.json());
+      const daySel = document.getElementById('day_id');
+      days.forEach(d => {
+        daySel.innerHTML += `<option value="${d.day_id}">${d.day_name}</option>`;
+      });
+
+      // Subjects
+      const subjects = await fetch('http://localhost:3000/subjects').then(r => r.json());
+      const subSel = document.getElementById('subject_id');
+      subjects.forEach(s => {
+        subSel.innerHTML += `<option value="${s.subject_id}">${s.subject_name} (${s.subject_code})</option>`;
+      });
+
+      // Rooms
+      const rooms = await fetch('http://localhost:3000/rooms').then(r => r.json());
+      const roomSel = document.getElementById('room_id');
+      rooms.forEach(r => {
+        roomSel.innerHTML += `<option value="${r.room_id}">${r.room_number}</option>`;
+      });
+
+      // Teachers
+      const teachers = await fetch('http://localhost:3000/teachers').then(r => r.json());
+      const teacherSel = document.getElementById('teacher_id');
+      teachers.forEach(t => {
+        teacherSel.innerHTML += `<option value="${t.teacher_id}">${t.teacher_name}</option>`;
+      });
+
+      // Add event listeners for auto-calculating duration
+      document.getElementById('start_time').addEventListener('change', calculateDuration);
+      document.getElementById('end_time').addEventListener('change', calculateDuration);
+    }
+
+    function calculateDuration() {
+      const startTime = document.getElementById('start_time').value;
+      const endTime = document.getElementById('end_time').value;
+
+      if (startTime && endTime) {
+        const [startHour, startMin] = startTime.split(':').map(Number);
+        const [endHour, endMin] = endTime.split(':').map(Number);
+
+        const startTotalMin = startHour * 60 + startMin;
+        const endTotalMin = endHour * 60 + endMin;
+
+        if (endTotalMin > startTotalMin) {
+          const durationMin = endTotalMin - startTotalMin;
+          const durationHours = (durationMin / 60).toFixed(2);
+          document.getElementById('duration_hours').value = parseFloat(durationHours);
+        } else {
+          alert('End time must be after start time!');
+          document.getElementById('end_time').value = '';
+          document.getElementById('duration_hours').value = '1';
+        }
+      }
+    }
+
+    async function loadTimetable() {
+      allData = await fetch('http://localhost:3000/timetable').then(r => r.json());
+      renderTable(allData);
+    }
+
+    function filterTimetable() {
+      const sessionFilter = document.getElementById('filter-session').value;
+      const sectionFilter = document.getElementById('filter-section').value;
+
+      let filtered = allData;
+
+      if (sessionFilter) {
+        filtered = filtered.filter(t => t.session_id == sessionFilter);
+      }
+
+      if (sectionFilter) {
+        filtered = filtered.filter(t => t.section_id == sectionFilter);
+      }
+
+      renderTable(filtered);
+    }
+
+    async function onFilterSessionChange() {
+      const sessionFilter = document.getElementById('filter-session').value;
+      await populateFilterSectionOptions(sessionFilter);
+      filterTimetable();
+    }
+
+    async function populateEntrySectionOptions(sessionId) {
+      const sectionSelect = document.getElementById('section_id');
+      sectionSelect.innerHTML = '<option value="">-- Select Section --</option>';
+
+      if (!sessionId) return;
+
+      const sections = await fetch(`http://localhost:3000/sections/${sessionId}`).then(r => r.json());
+      sections.forEach(s => {
+        sectionSelect.innerHTML += `<option value="${s.section_id}">${s.section_name}</option>`;
+      });
+    }
+
+    async function populateFilterSectionOptions(sessionId) {
+      const filterSelect = document.getElementById('filter-section');
+      filterSelect.innerHTML = '<option value="">-- All Sections --</option>';
+      const url = sessionId ? `http://localhost:3000/sections/${sessionId}` : 'http://localhost:3000/sections';
+      const sections = await fetch(url).then(r => r.json());
+      const added = new Set();
+
+      sections.forEach(s => {
+        if (added.has(s.section_id)) return;
+        added.add(s.section_id);
+        const label = sessionId ? s.section_name : `${s.session_name} - ${s.section_name}`;
+        filterSelect.innerHTML += `<option value="${s.section_id}">${label}</option>`;
+      });
+    }
+
+    function renderTable(data) {
+      const tbody = document.getElementById('timetable-list');
+      tbody.innerHTML = '';
+
+      if (data.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#718096">No entries found</td></tr>';
+        return;
+      }
+
+      data.forEach((t, i) => {
+        tbody.innerHTML += `
+          <tr>
+            <td>${i + 1}</td>
+            <td>${t.session_name}</td>
+            <td><strong>${t.section_name}</strong></td>
+            <td>${t.day_name}</td>
+            <td>${t.start_time} - ${t.end_time}</td>
+            <td>${t.subject_name}<br>
+              <small style="color:#718096">${t.subject_code}</small>
+            </td>
+            <td>${t.teacher_name}</td>
+            <td>${t.room_number}</td>
+            <td>
+              <button class="btn btn-danger" onclick="deleteEntry(${t.timetable_id})">🗑️</button>
+            </td>
+          </tr>
+        `;
+      });
+    }
+
+    function searchTable() {
+      const subjectFilter = document.getElementById('search-subject').value.toLowerCase();
+      const teacherFilter = document.getElementById('search-teacher').value.toLowerCase();
+      const roomFilter = document.getElementById('search-room').value.toLowerCase();
+
+      let filtered = allData;
+
+      if (subjectFilter) {
+        filtered = filtered.filter(t => t.subject_name.toLowerCase().includes(subjectFilter) || 
+                                         t.subject_code.toLowerCase().includes(subjectFilter));
+      }
+
+      if (teacherFilter) {
+        filtered = filtered.filter(t => t.teacher_name.toLowerCase().includes(teacherFilter));
+      }
+
+      if (roomFilter) {
+        filtered = filtered.filter(t => t.room_number.toLowerCase().includes(roomFilter));
+      }
+
+      // Apply existing filters as well
+      const sessionFilter = document.getElementById('filter-session').value;
+      const sectionFilter = document.getElementById('filter-section').value;
+
+      if (sessionFilter) {
+        filtered = filtered.filter(t => t.session_id == sessionFilter);
+      }
+
+      if (sectionFilter) {
+        filtered = filtered.filter(t => t.section_id == sectionFilter);
+      }
+
+      renderTable(filtered);
+    }
+
+    async function addEntry() {
+      const data = {
+        session_id:     document.getElementById('session_id').value,
+        section_id:     document.getElementById('section_id').value,
+        day_id:         document.getElementById('day_id').value,
+        subject_id:     document.getElementById('subject_id').value,
+        room_id:        document.getElementById('room_id').value,
+        teacher_id:     document.getElementById('teacher_id').value,
+        start_time:     document.getElementById('start_time').value,
+        end_time:       document.getElementById('end_time').value,
+        duration_hours: document.getElementById('duration_hours').value
+      };
+
+      if (!data.teacher_id || !data.start_time || !data.end_time || !data.room_id) {
+        alert('Please fill all fields!');
+        return;
+      }
+
+      const res  = await fetch('http://localhost:3000/timetable', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify(data)
+      });
+      const result = await res.json();
+      alert(result.message);
+      
+      if (result.success) {
+        // Clear form
+        document.getElementById('start_time').value = '';
+        document.getElementById('end_time').value = '';
+        document.getElementById('duration_hours').value = '1';
+        // Clear search filters
+        document.getElementById('search-subject').value = '';
+        document.getElementById('search-teacher').value = '';
+        document.getElementById('search-room').value = '';
+        loadTimetable();
+      }
+    }
+
+    async function deleteEntry(id) {
+      if (!confirm('Delete this timetable entry?')) return;
+      const res  = await fetch(`http://localhost:3000/timetable/${id}`, { method: 'DELETE' });
+      const data = await res.json();
+      alert(data.message);
+      loadTimetable();
+    }
+  </script>
+
+</body>
+</html>

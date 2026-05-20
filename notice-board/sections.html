@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Notice Board - Sections</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <div class="sidebar">
+    <h2>📋 Notice Board</h2>
+    <a href="index.html">🏠 Dashboard</a>
+    <a href="announcements.html">📢 Announcements</a>
+    <a href="timetable.html">📅 Timetable</a>
+    <a href="sessions.html">🎓 Sessions</a>
+    <a href="sections.html" class="active">👥 Sections</a>
+    <a href="subjects.html">📚 Subjects</a>
+    <a href="rooms.html">🏫 Rooms</a>
+    <a href="offices.html">🏢 Teacher Offices</a>
+  </div>
+
+  <div class="main">
+    <h1>Sections</h1>
+    <p class="subtitle">Manage class sections</p>
+
+    <div class="card">
+      <h2>➕ Add New Section</h2>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Session</label>
+          <select id="session_id"></select>
+        </div>
+        <div class="form-group">
+          <label>Section Name</label>
+          <input type="text" id="section_name" placeholder="e.g. A, B, C" />
+        </div>
+      </div>
+      <button class="btn btn-primary" onclick="addSection()">➕ Add Section</button>
+    </div>
+
+    <div class="card">
+      <h2>👥 All Sections</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Session</th>
+            <th>Section</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody id="sections-list">
+          <tr><td colspan="4">Loading...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <script>
+    window.onload = async () => {
+      await loadSessionDropdown();
+      await loadSections();
+    };
+
+    async function loadSessionDropdown() {
+      const sessions = await fetch('http://localhost:3000/sessions').then(r => r.json());
+      const sel      = document.getElementById('session_id');
+      sessions.forEach(s => {
+        sel.innerHTML += `<option value="${s.session_id}">${s.session_name}</option>`;
+      });
+    }
+
+    async function loadSections() {
+      const data  = await fetch('http://localhost:3000/sections').then(r => r.json());
+      const tbody = document.getElementById('sections-list');
+      tbody.innerHTML = '';
+
+      if (data.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#718096">No sections yet</td></tr>';
+        return;
+      }
+
+      data.forEach((s, i) => {
+        tbody.innerHTML += `
+          <tr>
+            <td>${i + 1}</td>
+            <td>${s.session_name}</td>
+            <td><strong>${s.section_name}</strong></td>
+            <td>
+              <button class="btn btn-danger" onclick="deleteSection(${s.section_id})">🗑️ Delete</button>
+            </td>
+          </tr>
+        `;
+      });
+    }
+
+    async function addSection() {
+      const data = {
+        session_id:   document.getElementById('session_id').value,
+        section_name: document.getElementById('section_name').value.trim()
+      };
+
+      if (!data.section_name) {
+        alert('Please enter section name!');
+        return;
+      }
+
+      const res    = await fetch('http://localhost:3000/sections', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify(data)
+      });
+      const result = await res.json();
+      alert(result.message);
+      document.getElementById('section_name').value = '';
+      loadSections();
+    }
+
+    async function deleteSection(id) {
+      if (!confirm('Delete this section?')) return;
+      const res    = await fetch(`http://localhost:3000/sections/${id}`, { method: 'DELETE' });
+      const result = await res.json();
+      alert(result.message);
+      loadSections();
+    }
+  </script>
+
+</body>
+</html>

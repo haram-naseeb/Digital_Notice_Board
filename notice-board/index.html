@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Notice Board - Dashboard</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- Sidebar -->
+  <div class="sidebar">
+    <h2>📋 Notice Board</h2>
+    <a href="index.html" class="active">🏠 Dashboard</a>
+    <a href="announcements.html">📢 Announcements</a>
+    <a href="timetable.html">📅 Timetable</a>
+    <a href="sessions.html">🎓 Sessions</a>
+    <a href="sections.html">👥 Sections</a>
+    <a href="subjects.html">📚 Subjects</a>
+    <a href="rooms.html">🏫 Rooms</a>
+    <a href="teachers.html">👨‍🏫 Teachers</a>
+    <a href="offices.html">🏢 Teacher Offices</a>
+  </div>
+
+  <!-- Main Content -->
+  <div class="main">
+    <h1>Dashboard</h1>
+    <p class="subtitle">Welcome to Department Notice Board Admin Panel</p>
+
+    <!-- Stats -->
+    <div class="stats">
+      <div class="stat-card">
+        <h3 id="total-announcements">0</h3>
+        <p>Total Announcements</p>
+      </div>
+      <div class="stat-card urgent">
+        <h3 id="pending-count">0</h3>
+        <p>Pending Approval</p>
+      </div>
+      <div class="stat-card event">
+        <h3 id="sessions-count">0</h3>
+        <p>Active Sessions</p>
+      </div>
+      <div class="stat-card rooms">
+        <h3 id="rooms-count">0</h3>
+        <p>Total Rooms</p>
+      </div>
+    </div>
+
+    <!-- Recent Announcements -->
+    <div class="card">
+      <h2>📢 Recent Announcements</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Title</th>
+            <th>Category</th>
+            <th>Status</th>
+            <th>Created</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody id="recent-list">
+          <tr><td colspan="5">Loading...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <script>
+    async function loadDashboard() {
+      // Load announcements
+      const ann = await fetch('http://localhost:3000/announcements').then(r => r.json());
+      document.getElementById('total-announcements').textContent = ann.length;
+      document.getElementById('pending-count').textContent = ann.filter(a => a.status === 'pending').length;
+
+      // Load sessions
+      const sess = await fetch('http://localhost:3000/sessions').then(r => r.json());
+      document.getElementById('sessions-count').textContent = sess.length;
+
+      // Load rooms
+      const rooms = await fetch('http://localhost:3000/rooms').then(r => r.json());
+      document.getElementById('rooms-count').textContent = rooms.length;
+
+      // Recent announcements table
+      const tbody = document.getElementById('recent-list');
+      tbody.innerHTML = '';
+      ann.slice(0, 10).forEach(a => {
+        tbody.innerHTML += `
+          <tr>
+            <td>${a.title}</td>
+            <td><span class="tag tag-${a.category}">${a.category}</span></td>
+            <td><span class="tag tag-${a.status}">${a.status}</span></td>
+            <td>${new Date(a.created_at).toLocaleDateString()}</td>
+            <td>
+              ${a.status === 'pending' ?
+                `<button class="btn btn-success" onclick="approve(${a.announcement_id})">✅ Approve</button>` :
+                '✅ Approved'}
+            </td>
+          </tr>
+        `;
+      });
+    }
+
+    async function approve(id) {
+      const res = await fetch(`http://localhost:3000/announcements/approve/${id}`, { method: 'POST' });
+      const data = await res.json();
+      alert(data.message);
+      loadDashboard();
+    }
+
+    loadDashboard();
+  </script>
+
+</body>
+</html>
