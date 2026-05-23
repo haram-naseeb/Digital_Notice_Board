@@ -8,31 +8,35 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static('.'));
 
-// ---- MySQL Connection ----
-const db = mysql.createConnection({
+// ---- MySQL Connection Pool ----
+const db = mysql.createPool({
+  connectionLimit: 10,
   host:     'localhost',
   user:     'root',
   password: '1234567890-=1234567890-=',
   database: 'digital_notice_board'
 });
 
-db.connect((err) => {
-  if (err) {
-    console.log('❌ MySQL connection failed:', err);
-  } else {
-    console.log('✅ MySQL connected!');
-  }
-});
+console.log('✅ MySQL connection pool created (limit: 10 connections)!');
 
 // ---- MQTT Connection ----
-const mqttClient = mqtt.connect('mqtt://localhost:1883', {
+// Using public broker.hivemq.com (Eclipse HiveMQ public broker)
+const mqttClient = mqtt.connect('mqtt://broker.hivemq.com:1883', {
   reconnectPeriod: 5000,
   connectTimeout: 10000,
   clientId: 'notice_board_server'
 });
 
 mqttClient.on('connect', () => {
-  console.log('✅ MQTT Connected to local Mosquitto!');
+  console.log('✅ MQTT Connected to broker.hivemq.com:1883 (Eclipse HiveMQ public broker)!');
+});
+
+mqttClient.on('reconnect', () => {
+  console.log('🔄 MQTT Reconnecting...');
+});
+
+mqttClient.on('disconnect', () => {
+  console.log('❌ MQTT Disconnected');
 });
 
 mqttClient.on('error', (err) => {
@@ -341,9 +345,10 @@ app.delete('/announcements/:id', (req, res) => {
 app.get('/diagnostics', (req, res) => {
   const status = {
     mqtt_connected: mqttClient.connected,
-    mqtt_server: 'localhost',
+    mqtt_server: 'broker.hivemq.com',
     mqtt_port: 1883,
     mqtt_protocol: 'mqtt',
+    mqtt_broker: 'Eclipse HiveMQ (public)',
     timestamp: new Date().toISOString(),
     database: 'checking...'
   };
@@ -657,6 +662,64 @@ app.get('/timetable', (req, res) => {
   });
 });
 
+// Get timetable for specific year, session, section (for ESP32)
+app.get('/timetable/:year_id/:session_id/:section_id', (req, res) => {
+  const { year_id, session_id, section_id } = req.params;
+
+  const sql = `
+    SELECT 
+      t.timetable_id,
+      t.start_time,
+      t.end_time,
+      TIMEDIFF(t.end_time, t.start_time) as duration,
+      su.subject_name,
+      su.subject_code,
+      t.teacher_id,
+      IFNULL(te.teacher_name, 'TBA') as teacher_name,
+      r.room_number,
+      d.day_name,
+      d.day_id,
+      se.semester,
+      se.session_name,
+      se.term,
+      sc.section_name
+    FROM timetable t
+    JOIN sessions se ON t.session_id = se.session_id
+    JOIN sections sc ON t.section_id = sc.section_id
+    JOIN days     d  ON t.day_id     = d.day_id
+    JOIN subjects su ON t.subject_id = su.subject_id
+    JOIN rooms    r  ON t.room_id    = r.room_id
+    LEFT JOIN teachers te ON t.teacher_id = te.teacher_id
+    WHERE se.year = ? AND se.session_id = ? AND sc.section_id = ?
+    ORDER BY d.day_id, TIME(t.start_time) ASC
+  `;
+
+  db.query(sql, [year_id, session_id, section_id], (err, results) => {
+    if (err) {
+      console.log('❌ Error fetching timetable:', err);
+      return res.json({ success: false, data: [], semester: "Unknown", term: "Unknown", session_name: "Unknown" });
+    }
+
+    let semester = "Unknown";
+    let term = "Unknown";
+    let session_name = "Unknown";
+    if (results.length > 0) {
+      semester     = results[0].semester     || "Unknown";
+      term         = results[0].term         || "Unknown";
+      session_name = results[0].session_name || "Unknown";
+    }
+
+    console.log(`✅ Fetched ${results.length} timetable entries | ${semester} - ${term} (${session_name})`);
+    res.json({
+      success: true,
+      semester: semester,
+      term: term,
+      session_name: session_name,
+      data: results
+    });
+  });
+});
+
 // Get timetable for specific year, session, section, and day (for ESP32)
 app.get('/timetable/:year_id/:session_id/:section_id/:day_id', (req, res) => {
   const { year_id, session_id, section_id, day_id } = req.params;
@@ -695,7 +758,6 @@ app.get('/timetable/:year_id/:session_id/:section_id/:day_id', (req, res) => {
       return res.json({ success: false, data: [], semester: "Unknown", term: "Unknown", session_name: "Unknown" });
     }
     
-    // Extract semester, term, and session_name from first result
     let semester = "Unknown";
     let term = "Unknown";
     let session_name = "Unknown";

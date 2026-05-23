@@ -36,40 +36,7 @@
   <main class="main">
     <div class="page-header">
       <h1>Teacher Offices</h1>
-      <p class="subtitle">Manage teacher office locations by floor</p>
-    </div>
-
-    <!-- Add Form -->
-    <div class="card">
-      <div class="card-header">
-        <h2><i data-lucide="plus-circle"></i> Add Teacher Office</h2>
-      </div>
-      <div class="form-grid">
-        <div class="form-group">
-          <label for="teacher_id">Teacher</label>
-          <select id="teacher_id">
-            <option value="">Select a teacher</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label for="floor">Floor</label>
-          <select id="floor">
-            <option value="Ground Floor">Ground Floor</option>
-            <option value="1st Floor">1st Floor</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label for="room_number">Room Number</label>
-          <input type="text" id="room_number" placeholder="e.g. Faculty Block Room 3" />
-        </div>
-        <div class="form-group">
-          <label for="cabin_number">Cabin Number</label>
-          <input type="text" id="cabin_number" placeholder="e.g. Cabin 5" />
-        </div>
-      </div>
-      <button class="btn btn-primary" onclick="addOffice()">
-        <i data-lucide="plus"></i> Add Office
-      </button>
+      <p class="subtitle">Assign teachers to existing office rooms and cabins</p>
     </div>
 
     <!-- Ground Floor -->
@@ -121,11 +88,11 @@
     </div>
   </main>
 
-  <!-- Edit Modal -->
-  <div id="edit-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-label="Edit Office">
+  <!-- Edit Modal — only teacher is editable; room & cabin are read-only -->
+  <div id="edit-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-label="Assign Teacher">
     <div class="modal-box">
       <div class="modal-header">
-        <h3>Edit Office</h3>
+        <h3>Assign Teacher to Office</h3>
         <button class="modal-close" onclick="closeModal()" aria-label="Close">
           <i data-lucide="x"></i>
         </button>
@@ -140,24 +107,29 @@
         </div>
         <div class="form-group">
           <label for="edit-floor">Floor</label>
-          <select id="edit-floor">
-            <option value="Ground Floor">Ground Floor</option>
-            <option value="1st Floor">1st Floor</option>
-          </select>
+          <!-- Read-only: displayed as plain text, value held in hidden input -->
+          <input type="text" id="edit-floor-display" disabled style="background:var(--bg-muted,#f3f4f6);color:var(--text-muted,#6b7280);cursor:not-allowed;" />
+          <input type="hidden" id="edit-floor" />
         </div>
         <div class="form-group">
           <label for="edit-room">Room Number</label>
-          <input type="text" id="edit-room" />
+          <input type="text" id="edit-room" disabled
+            style="background:var(--bg-muted,#f3f4f6);color:var(--text-muted,#6b7280);cursor:not-allowed;" />
         </div>
         <div class="form-group">
           <label for="edit-cabin">Cabin Number</label>
-          <input type="text" id="edit-cabin" />
+          <input type="text" id="edit-cabin" disabled
+            style="background:var(--bg-muted,#f3f4f6);color:var(--text-muted,#6b7280);cursor:not-allowed;" />
         </div>
       </div>
+      <p style="font-size:0.78rem;color:var(--text-muted,#6b7280);margin-top:-4px;">
+        <i data-lucide="info" style="width:13px;height:13px;vertical-align:-2px;"></i>
+        Room and cabin are fixed office structures and cannot be changed here.
+      </p>
       <div class="modal-actions">
         <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
         <button class="btn btn-primary" onclick="saveEdit()">
-          <i data-lucide="save"></i> Save Changes
+          <i data-lucide="save"></i> Save Assignment
         </button>
       </div>
     </div>
@@ -188,10 +160,9 @@
         const teachers = await res.json();
         if (!Array.isArray(teachers)) return;
 
-        [document.getElementById('teacher_id'), document.getElementById('edit-teacher_id')].forEach(sel => {
-          teachers.forEach(t => {
-            sel.innerHTML += `<option value="${t.teacher_id}">${t.teacher_name}</option>`;
-          });
+        const sel = document.getElementById('edit-teacher_id');
+        teachers.forEach(t => {
+          sel.innerHTML += `<option value="${t.teacher_id}">${t.teacher_name}</option>`;
         });
       } catch (err) { showToast('Could not load teachers: ' + err.message, 'error'); }
     }
@@ -219,60 +190,48 @@
         return;
       }
 
-      data.forEach((o, i) => {
-        tbody.innerHTML += `
-          <tr>
-            <td class="text-muted text-sm">${i + 1}</td>
-            <td><span class="font-medium">${o.teacher_name}</span></td>
-            <td>${o.room_number}</td>
-            <td>${o.cabin_number}</td>
-            <td>
-              <div class="td-actions">
-                <button class="btn btn-success" onclick="openEdit(${o.office_id}, ${o.teacher_id}, '${o.floor}', '${o.room_number}', '${o.cabin_number}')">
-                  <i data-lucide="pencil"></i> Edit
-                </button>
-                <button class="btn btn-danger" onclick="delOffice(${o.office_id})">
-                  <i data-lucide="trash-2"></i>
-                </button>
-              </div>
-            </td>
-          </tr>`;
+      // Group by room number to visually cluster teachers sharing a room
+      const byRoom = {};
+      data.forEach(o => {
+        if (!byRoom[o.room_number]) byRoom[o.room_number] = [];
+        byRoom[o.room_number].push(o);
+      });
+
+      let globalIndex = 1;
+      Object.entries(byRoom).forEach(([room, entries]) => {
+        entries.forEach((o, idx) => {
+          const isFirstInRoom = idx === 0;
+          const rowspan       = entries.length;
+
+          tbody.innerHTML += `
+            <tr>
+              <td class="text-muted text-sm">${globalIndex++}</td>
+              <td><span class="font-medium">${o.teacher_name}</span></td>
+              ${isFirstInRoom
+                ? `<td rowspan="${rowspan}" style="vertical-align:middle;border-left:3px solid var(--color-primary,#6366f1);">${o.room_number}</td>`
+                : ''}
+              <td>${o.cabin_number}</td>
+              <td>
+                <div class="td-actions">
+                  <button class="btn btn-success" onclick="openEdit(${o.office_id}, ${o.teacher_id}, '${o.floor}', '${o.room_number}', '${o.cabin_number}')">
+                    <i data-lucide="pencil"></i> Edit
+                  </button>
+                </div>
+              </td>
+            </tr>`;
+        });
       });
 
       if (window.lucide) lucide.createIcons();
     }
 
-    async function addOffice() {
-      const data = {
-        teacher_id:   parseInt(document.getElementById('teacher_id').value),
-        floor:        document.getElementById('floor').value,
-        room_number:  document.getElementById('room_number').value.trim(),
-        cabin_number: document.getElementById('cabin_number').value.trim(),
-      };
-      if (!data.teacher_id || !data.room_number || !data.cabin_number) {
-        showToast('Please fill in all fields', 'warning'); return;
-      }
-      try {
-        const res    = await fetch(`${API}/offices`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data)
-        });
-        const result = await res.json();
-        showToast(result.message || 'Office added', res.ok ? 'success' : 'error');
-        if (res.ok) {
-          document.getElementById('teacher_id').value  = '';
-          document.getElementById('room_number').value  = '';
-          document.getElementById('cabin_number').value = '';
-          loadOffices();
-        }
-      } catch { showToast('Failed to add office', 'error'); }
-    }
-
     function openEdit(id, teacherId, floor, room, cabin) {
-      document.getElementById('edit-id').value         = id;
-      document.getElementById('edit-teacher_id').value = teacherId;
-      document.getElementById('edit-floor').value      = floor;
-      document.getElementById('edit-room').value       = room;
-      document.getElementById('edit-cabin').value      = cabin;
+      document.getElementById('edit-id').value            = id;
+      document.getElementById('edit-teacher_id').value    = teacherId;
+      document.getElementById('edit-floor').value         = floor;
+      document.getElementById('edit-floor-display').value = floor;
+      document.getElementById('edit-room').value          = room;
+      document.getElementById('edit-cabin').value         = cabin;
 
       const modal = document.getElementById('edit-modal');
       modal.classList.add('open');
@@ -285,32 +244,32 @@
 
     async function saveEdit() {
       const id   = document.getElementById('edit-id').value;
+      const teacherId = parseInt(document.getElementById('edit-teacher_id').value);
+
+      if (!teacherId) {
+        showToast('Please select a teacher', 'warning');
+        return;
+      }
+
+      // Only send teacher_id — room, cabin, and floor stay untouched on the backend
       const data = {
-        teacher_id:   parseInt(document.getElementById('edit-teacher_id').value),
+        teacher_id:   teacherId,
         floor:        document.getElementById('edit-floor').value,
-        room_number:  document.getElementById('edit-room').value.trim(),
-        cabin_number: document.getElementById('edit-cabin').value.trim(),
+        room_number:  document.getElementById('edit-room').value,
+        cabin_number: document.getElementById('edit-cabin').value,
       };
+
       try {
         const res    = await fetch(`${API}/offices/${id}`, {
           method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data)
         });
         const result = await res.json();
-        showToast(result.message || 'Updated', res.ok ? 'success' : 'error');
-        closeModal();
-        loadOffices();
-      } catch { showToast('Failed to save changes', 'error'); }
-    }
-
-    function delOffice(id) {
-      showConfirm('This office record will be permanently removed.', async () => {
-        try {
-          const res    = await fetch(`${API}/offices/${id}`, { method: 'DELETE' });
-          const result = await res.json();
-          showToast(result.message || 'Deleted', res.ok ? 'success' : 'error');
+        showToast(result.message || 'Teacher assigned successfully', res.ok ? 'success' : 'error');
+        if (res.ok) {
+          closeModal();
           loadOffices();
-        } catch { showToast('Failed to delete office', 'error'); }
-      }, 'Delete Office');
+        }
+      } catch { showToast('Failed to save assignment', 'error'); }
     }
   </script>
 
