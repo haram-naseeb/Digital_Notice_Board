@@ -1,0 +1,561 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <head>
+  <link rel="icon" type="image/png" href="uet_cs_logo.jpg">
+  <title>UET CS Digital Notice Board</title>
+  </head> 
+  <meta name="description" content="Department of Computer Science, University of Engineering and Technology Lahore — Digital Notice Board System">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+    :root {
+      --primary:       #1e3a8a;
+      --primary-mid:   #2563eb;
+      --primary-light: #3b82f6;
+      --primary-pale:  #eff6ff;
+      --text:          #0f172a;
+      --text-muted:    #64748b;
+      --border:        #e2e8f0;
+      --white:         #ffffff;
+      --bg:            #f1f5f9;
+    }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: var(--white);
+      color: var(--text);
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ── Navbar ── */
+    .navbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 40px;
+      height: 64px;
+      background: var(--white);
+      border-bottom: 1px solid var(--border);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+
+    .navbar-brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-weight: 700;
+      color: var(--primary);
+      font-size: 15px;
+      text-decoration: none;
+    }
+
+    .navbar-logos {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+    }
+
+    .navbar-logos img {
+      width: 28px;
+      height: 28px;
+      object-fit: contain;
+      border-radius: 4px;
+      background: var(--primary-pale);
+      padding: 2px;
+    }
+
+    .navbar-right {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .nav-link {
+      font-size: 13.5px;
+      font-weight: 500;
+      color: var(--text-muted);
+      text-decoration: none;
+      transition: color 0.15s ease;
+    }
+
+    .nav-link:hover { color: var(--primary); }
+
+    .btn-nav {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 20px;
+      background: var(--primary-mid);
+      color: var(--white);
+      border: none;
+      border-radius: 8px;
+      font-size: 13.5px;
+      font-weight: 600;
+      font-family: 'Inter', sans-serif;
+      cursor: pointer;
+      text-decoration: none;
+      transition: all 0.18s ease;
+      box-shadow: 0 1px 2px rgba(37,99,235,0.3);
+    }
+
+    .btn-nav:hover {
+      background: var(--primary);
+      box-shadow: 0 3px 8px rgba(37,99,235,0.4);
+      transform: translateY(-1px);
+    }
+
+    /* ── Hero ── */
+    .hero {
+      position: relative;
+      background: linear-gradient(140deg, #0f1f5c 0%, #1e3a8a 40%, #1d4ed8 100%);
+      padding: 100px 40px 120px;
+      text-align: center;
+      overflow: hidden;
+    }
+
+    /* Decorative grid */
+    .hero::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background-image: radial-gradient(circle at 1px 1px, rgba(255,255,255,0.07) 1px, transparent 0);
+      background-size: 36px 36px;
+      pointer-events: none;
+    }
+
+    /* Decorative circles */
+    .hero::after {
+      content: '';
+      position: absolute;
+      top: -120px;
+      right: -80px;
+      width: 500px;
+      height: 500px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(59,130,246,0.2) 0%, transparent 70%);
+      pointer-events: none;
+    }
+
+    .hero-content {
+      position: relative;
+      z-index: 1;
+      max-width: 860px;
+      margin: 0 auto;
+    }
+
+    .hero-logos {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 32px;
+      margin-bottom: 40px;
+    }
+
+    .hero-logo-wrap {
+      width: 90px;
+      height: 90px;
+      background: rgba(255,255,255,0.92);
+      border-radius: 18px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.25);
+    }
+
+    .hero-logo-wrap img {
+      max-width: 76px;
+      max-height: 76px;
+      object-fit: contain;
+    }
+
+    .hero-dept {
+      text-align: center;
+    }
+
+    .hero-dept h2 {
+      font-size: 22px;
+      font-weight: 700;
+      color: rgba(255,255,255,0.95);
+      letter-spacing: -0.3px;
+    }
+
+    .hero-dept p {
+      font-size: 14px;
+      color: rgba(255,255,255,0.55);
+      margin-top: 4px;
+    }
+
+    .hero-badge {
+      display: inline-block;
+      padding: 5px 16px;
+      background: rgba(255,255,255,0.1);
+      border: 1px solid rgba(255,255,255,0.2);
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 600;
+      color: rgba(255,255,255,0.7);
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+      margin-bottom: 20px;
+    }
+
+    .hero h1 {
+      font-size: 52px;
+      font-weight: 800;
+      color: #ffffff;
+      letter-spacing: -1.5px;
+      line-height: 1.1;
+      margin-bottom: 18px;
+    }
+
+    .hero-desc {
+      font-size: 17px;
+      color: rgba(255,255,255,0.65);
+      line-height: 1.7;
+      max-width: 580px;
+      margin: 0 auto 40px;
+      font-weight: 400;
+    }
+
+    .hero-actions {
+      display: flex;
+      gap: 14px;
+      justify-content: center;
+    }
+
+    .btn-hero-primary {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 14px 32px;
+      background: #ffffff;
+      color: var(--primary);
+      border: none;
+      border-radius: 10px;
+      font-size: 14px;
+      font-weight: 700;
+      font-family: 'Inter', sans-serif;
+      cursor: pointer;
+      text-decoration: none;
+      transition: all 0.2s ease;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.2);
+    }
+
+    .btn-hero-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+    }
+
+    .btn-hero-secondary {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 14px 32px;
+      background: rgba(255,255,255,0.1);
+      color: rgba(255,255,255,0.9);
+      border: 1px solid rgba(255,255,255,0.25);
+      border-radius: 10px;
+      font-size: 14px;
+      font-weight: 600;
+      font-family: 'Inter', sans-serif;
+      cursor: pointer;
+      text-decoration: none;
+      transition: all 0.2s ease;
+    }
+
+    .btn-hero-secondary:hover {
+      background: rgba(255,255,255,0.18);
+      transform: translateY(-1px);
+    }
+
+    /* ── Stats row ── */
+    .stats-row {
+      display: flex;
+      justify-content: center;
+      gap: 0;
+      background: var(--white);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .stat-item {
+      flex: 1;
+      max-width: 220px;
+      text-align: center;
+      padding: 28px 20px;
+      border-right: 1px solid var(--border);
+    }
+
+    .stat-item:last-child { border-right: none; }
+
+    .stat-num {
+      font-size: 30px;
+      font-weight: 800;
+      color: var(--primary);
+      letter-spacing: -1px;
+    }
+
+    .stat-label {
+      font-size: 12px;
+      color: var(--text-muted);
+      font-weight: 500;
+      margin-top: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+    }
+
+    /* ── Features ── */
+    .features {
+      padding: 88px 40px;
+      background: var(--bg);
+    }
+
+    .section-label {
+      text-align: center;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      color: var(--primary-mid);
+      margin-bottom: 14px;
+    }
+
+    .section-title {
+      text-align: center;
+      font-size: 34px;
+      font-weight: 800;
+      color: var(--primary);
+      letter-spacing: -0.8px;
+      margin-bottom: 10px;
+    }
+
+    .section-desc {
+      text-align: center;
+      font-size: 15px;
+      color: var(--text-muted);
+      margin-bottom: 56px;
+      max-width: 500px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 20px;
+      max-width: 1000px;
+      margin: 0 auto;
+    }
+
+    .feature-card {
+      background: var(--white);
+      padding: 32px 28px;
+      border-radius: 14px;
+      border: 1px solid var(--border);
+      transition: all 0.3s ease;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .feature-card::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 3px;
+      background: linear-gradient(90deg, var(--primary-mid), var(--primary-light));
+    }
+
+    .feature-card:hover {
+      transform: translateY(-4px);
+      box-shadow: 0 12px 40px rgba(30,58,138,0.12);
+    }
+
+    .feature-icon {
+      width: 52px;
+      height: 52px;
+      background: var(--primary-pale);
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 18px;
+      color: var(--primary-mid);
+    }
+
+    .feature-icon svg { width: 24px; height: 24px; }
+
+    .feature-card h3 {
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--primary);
+      margin-bottom: 10px;
+    }
+
+    .feature-card p {
+      font-size: 14px;
+      color: var(--text-muted);
+      line-height: 1.65;
+    }
+
+    /* ── Footer ── */
+    .footer {
+      background: var(--primary);
+      color: rgba(255,255,255,0.7);
+      text-align: center;
+      padding: 28px 40px;
+      font-size: 13px;
+    }
+
+    .footer strong { color: rgba(255,255,255,0.95); }
+
+    @media (max-width: 768px) {
+      .hero { padding: 70px 24px 90px; }
+      .hero h1 { font-size: 36px; }
+      .hero-logos { gap: 20px; }
+      .hero-logo-wrap { width: 70px; height: 70px; }
+      .hero-dept h2 { font-size: 16px; }
+      .hero-actions { flex-direction: column; align-items: center; }
+      .stats-row { flex-wrap: wrap; }
+      .stat-item { max-width: 50%; border-bottom: 1px solid var(--border); }
+      .features { padding: 60px 24px; }
+      .navbar { padding: 0 24px; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Navbar -->
+  <nav class="navbar">
+    <a class="navbar-brand" href="home.html">
+      <div class="navbar-logos">
+        <img src="uet_cs_logo.jpg" alt="CS">
+      </div>
+      Notice Board
+    </a>
+    <div class="navbar-right">
+      <a href="#features" class="nav-link">Features</a>
+      <a href="login.html" class="btn-nav" id="top-nav-link">Sign In</a>
+    </div>
+  </nav>
+
+  <!-- Hero -->
+  <section class="hero">
+    <div class="hero-content">
+      <div class="hero-logos">
+        <div class="hero-logo-wrap">
+          <img src="uet_logo.png" alt="UET Logo">
+        </div>
+        <div class="hero-dept">
+          <h2>Department of Computer Science</h2>
+          <p>University of Engineering &amp; Technology, Lahore</p>
+        </div>
+        <div class="hero-logo-wrap">
+          <img src="uet_cs_logo.jpg" alt="CS Logo">
+        </div>
+      </div>
+
+      <div class="hero-badge">Digital Notice Board System</div>
+
+      <h1>Smarter Departmental Communication</h1>
+
+      <p class="hero-desc">
+         A centralized platform for managing announcements, coordinating timetables,
+         and organizing departmental activities — designed for academic excellence.
+      </p>
+
+      <div class="hero-actions">
+        <a href="login.html" class="btn-hero-primary" id="hero-cta">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
+          Sign In
+        </a>
+        <a href="#features" class="btn-hero-secondary">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 8 12 12 14 14"/></svg>
+          Learn More
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- Stats row -->
+  <div class="stats-row">
+    <div class="stat-item">
+      <div class="stat-num">2</div>
+      <div class="stat-label">User Roles</div>
+    </div>
+    <div class="stat-item">
+      <div class="stat-num">MQTT</div>
+      <div class="stat-label">Live Display</div>
+    </div>
+    <div class="stat-item">
+      <div class="stat-num">ESP32</div>
+      <div class="stat-label">Hardware Integration</div>
+    </div>
+    <div class="stat-item">
+      <div class="stat-num">24/7</div>
+      <div class="stat-label">Always On</div>
+    </div>
+  </div>
+
+  <!-- Features -->
+  <section id="features" class="features">
+    <div class="section-label">What We Offer</div>
+    <div class="section-title">Platform Capabilities</div>
+    <p class="section-desc">Designed for efficient department management and communication</p>
+
+    <div class="features-grid">
+      <div class="feature-card">
+        <div class="feature-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8h1a4 4 0 0 1 0 8h-1"/><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"/><line x1="6" y1="1" x2="6" y2="4"/><line x1="10" y1="1" x2="10" y2="4"/><line x1="14" y1="1" x2="14" y2="4"/></svg>
+        </div>
+        <h3>Announcement Management</h3>
+        <p>Create, schedule, and broadcast departmental announcements. Chairman approves before display on the digital notice board.</p>
+      </div>
+
+      <div class="feature-card">
+        <div class="feature-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+        </div>
+        <h3>Timetable Management</h3>
+        <p>Organize academic timetables with sessions, sections, subjects, room assignments, and conflict detection built in.</p>
+      </div>
+
+      <div class="feature-card">
+        <div class="feature-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/></svg>
+        </div>
+        <h3>Session &amp; Section Control</h3>
+        <p>Manage semester sessions and class sections with built-in duplicate prevention ensuring data integrity at all times.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer class="footer">
+    <strong>Department of Computer Science</strong> &mdash;
+    University of Engineering &amp; Technology, Lahore &copy; 2026
+  </footer>
+
+  <script>
+    window.addEventListener('load', () => {
+      const user = localStorage.getItem('nb_user');
+      if (user) {
+        try {
+          JSON.parse(user);
+          const cta = document.getElementById('hero-cta');
+          const nav = document.getElementById('top-nav-link');
+          if (cta) { cta.textContent = 'Go to Dashboard'; cta.href = 'index.html'; }
+          if (nav) { nav.textContent = 'Dashboard'; nav.href = 'index.html'; }
+        } catch (e) {}
+      }
+    });
+  </script>
+
+</body>
+</html>

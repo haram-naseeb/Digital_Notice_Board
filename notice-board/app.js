@@ -1,6 +1,6 @@
 /* ================================================================
    NOTICE BOARD — Shared Utilities (app.js)
-   Toast notifications + Confirm dialog
+   Toast notifications + Confirm dialog + Auth system
    ================================================================ */
 
 /* ── Toast System ─────────────────────────────────────────────── */
@@ -27,24 +27,22 @@
     const container = getContainer();
     const toast = document.createElement('div');
     toast.className = `toast toast-${type}`;
+    // Strip emoji from messages for cleaner display
+    const cleanMessage = message.replace(/[^\x00-\x7F]/g, '').trim() || message;
     toast.innerHTML = `
       <span class="toast-icon">${ICONS[type] || ICONS.success}</span>
-      <span class="toast-message">${message}</span>
+      <span class="toast-message">${cleanMessage}</span>
       <button class="toast-close" aria-label="Dismiss">${CLOSE_ICON}</button>
     `;
 
-    // Close on button click
     toast.querySelector('.toast-close').addEventListener('click', () => dismiss(toast));
-
     container.appendChild(toast);
 
-    // Trigger animation
     requestAnimationFrame(() => {
       requestAnimationFrame(() => toast.classList.add('toast-show'));
     });
 
-    // Auto-dismiss after 3s
-    const timer = setTimeout(() => dismiss(toast), 3000);
+    const timer = setTimeout(() => dismiss(toast), 4000);
     toast._dismissTimer = timer;
   };
 
@@ -55,9 +53,8 @@
   }
 })();
 
-/* ── Confirm Dialog (replaces window.confirm) ─────────────────── */
-window.showConfirm = function (message, onConfirm, title = 'Are you sure?') {
-  // Remove any existing confirm
+/* ── Confirm Dialog ────────────────────────────────────────────── */
+window.showConfirm = function (message, onConfirm, title = 'Confirm Action') {
   const existing = document.getElementById('confirm-modal');
   if (existing) existing.remove();
 
@@ -80,7 +77,6 @@ window.showConfirm = function (message, onConfirm, title = 'Are you sure?') {
 
   document.body.appendChild(overlay);
 
-  // Show animation
   requestAnimationFrame(() => {
     requestAnimationFrame(() => overlay.classList.add('confirm-show'));
   });
@@ -102,3 +98,132 @@ window.showConfirm = function (message, onConfirm, title = 'Are you sure?') {
 document.addEventListener('DOMContentLoaded', () => {
   if (window.lucide) lucide.createIcons();
 });
+
+/* ═══════════════════════════════════════════════════════════════
+   AUTHENTICATION SYSTEM
+   ═══════════════════════════════════════════════════════════════ */
+
+/**
+ * Check authentication status and enforce role-based access
+ * @param {string} requiredRole - 'admin' for admin-only pages, null for any logged-in user
+ * @returns {object} User object {username, role} if authenticated, else redirects to login
+ */
+window.checkAuth = function (requiredRole = null) {
+  const userStr = localStorage.getItem('nb_user');
+
+  if (!userStr) {
+    window.location.href = 'login.html';
+    return null;
+  }
+
+  try {
+    const user = JSON.parse(userStr);
+
+    if (!user.username || !user.role) {
+      throw new Error('Invalid user object');
+    }
+
+    if (requiredRole && user.role !== requiredRole) {
+      window.location.href = 'login.html';
+      return null;
+    }
+
+    return user;
+  } catch (e) {
+    localStorage.removeItem('nb_user');
+    window.location.href = 'login.html';
+    return null;
+  }
+};
+
+/** Logout the current user */
+window.logout = function () {
+  localStorage.removeItem('nb_user');
+  window.location.href = 'home.html';
+};
+
+/** Get current user from localStorage */
+window.getCurrentUser = function () {
+  const userStr = localStorage.getItem('nb_user');
+  if (!userStr) return null;
+  try {
+    return JSON.parse(userStr);
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * Dynamically render the sidebar based on user role
+ * @param {string} activeHref - The current page filename (e.g., 'index.html')
+ */
+window.renderSidebar = function (activeHref) {
+  const user = getCurrentUser();
+  if (!user) {
+    window.location.href = 'login.html';
+    return;
+  }
+
+  const isAdmin    = user.role === 'admin';
+  const isChairman = user.role === 'chairman';
+
+  const link = (href, icon, label) =>
+    `<a href="${href}" ${activeHref === href ? 'class="active"' : ''}>
+       <i data-lucide="${icon}"></i> ${label}
+     </a>`;
+
+  let navHtml = '';
+
+  // Both admin and chairman can access the dashboard
+  if (isAdmin || isChairman) {
+    navHtml += link('index.html',         'layout-dashboard', 'Dashboard');
+  }
+  
+  navHtml += link('announcements.html', 'megaphone',        'Announcements');
+
+  if (isAdmin) {
+    navHtml += link('timetable.html', 'calendar-days', 'Timetable');
+    navHtml += `<div class="sidebar-section-label">Data Management</div>`;
+    navHtml += link('sessions.html',  'graduation-cap', 'Sessions');
+    navHtml += link('sections.html',  'users',          'Sections');
+    navHtml += link('subjects.html',  'book-open',      'Subjects');
+    navHtml += link('rooms.html',     'door-open',      'Rooms');
+    navHtml += link('teachers.html',  'user-square',    'Teachers');
+    navHtml += link('offices.html',   'building-2',     'Teacher Offices');
+  }
+
+  const roleBadgeStyle = isAdmin
+    ? 'background:rgba(147,197,253,0.2);color:#93c5fd;border:1px solid rgba(147,197,253,0.3);'
+    : 'background:rgba(252,211,77,0.2);color:#fcd34d;border:1px solid rgba(252,211,77,0.3);';
+
+  const sidebarHtml = `
+    <a class="sidebar-brand" href="index.html">
+      <div class="sidebar-logos">
+        <img src="uet_cs_logo.jpg" alt="CS">
+      </div>
+      <div>
+        <span class="sidebar-brand-text">Notice Board</span>
+        <span class="sidebar-brand-sub">Dept. of Computer Science</span>
+      </div>
+    </a>
+    <div class="sidebar-user-info">
+      <div class="sidebar-username">${user.username}</div>
+      <span style="display:inline-block;padding:2px 9px;border-radius:20px;font-size:10px;font-weight:700;letter-spacing:0.4px;${roleBadgeStyle}">
+        ${user.role.toUpperCase()}
+      </span>
+    </div>
+    <div class="sidebar-nav">
+      ${navHtml}
+    </div>
+    <button class="sidebar-logout" onclick="logout()">
+      <i data-lucide="log-out"></i> Sign Out
+    </button>
+  `;
+
+  const container = document.getElementById('sidebar-container');
+  if (container) {
+    container.innerHTML = sidebarHtml;
+    container.className = 'sidebar';
+    if (window.lucide) lucide.createIcons();
+  }
+};

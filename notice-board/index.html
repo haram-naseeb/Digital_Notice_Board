@@ -3,79 +3,56 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Notice Board — Dashboard</title>
+  <head>
+  <link rel="icon" type="image/png" href="uet_cs_logo.jpg">
+    <title>Dashboard — UET CS Notice Board</title>
+  </head> 
+  <meta name="description" content="UET CS Department Digital Notice Board - Admin Dashboard">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
   <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js" defer></script>
-  <script src="app.js" defer></script>
 </head>
 <body>
 
-  <!-- ── Sidebar ─────────────────────────────────────────── -->
-  <nav class="sidebar">
-    <a class="sidebar-brand" href="index.html">
-      <div class="sidebar-brand-icon">
-        <i data-lucide="clipboard-list"></i>
-      </div>
-      <span class="sidebar-brand-text">Notice Board</span>
-    </a>
-    <div class="sidebar-nav">
-      <a href="index.html" class="active">
-        <i data-lucide="layout-dashboard"></i> Dashboard
-      </a>
-      <a href="announcements.html">
-        <i data-lucide="megaphone"></i> Announcements
-      </a>
-      <a href="timetable.html">
-        <i data-lucide="calendar-days"></i> Timetable
-      </a>
-      <div class="sidebar-section-label">Data Management</div>
-      <a href="sessions.html">
-        <i data-lucide="graduation-cap"></i> Sessions
-      </a>
-      <a href="sections.html">
-        <i data-lucide="users"></i> Sections
-      </a>
-      <a href="subjects.html">
-        <i data-lucide="book-open"></i> Subjects
-      </a>
-      <a href="rooms.html">
-        <i data-lucide="door-open"></i> Rooms
-      </a>
-      <a href="teachers.html">
-        <i data-lucide="user-square"></i> Teachers
-      </a>
-      <a href="offices.html">
-        <i data-lucide="building-2"></i> Teacher Offices
-      </a>
-    </div>
-    <div class="sidebar-footer">Department Admin Panel</div>
-  </nav>
+  <div id="sidebar-container"></div>
 
-  <!-- ── Main ─────────────────────────────────────────────── -->
   <main class="main">
     <div class="page-header">
-      <h1>Dashboard</h1>
-      <p class="subtitle">Overview of department activity</p>
+      <div class="page-header-left">
+        <h1>Dashboard</h1>
+        <p class="subtitle">Overview of department activity</p>
+      </div>
     </div>
 
-    <!-- Stat cards -->
+    <!-- Stat Cards -->
     <div class="stats">
       <div class="stat-card">
+        <div class="stat-card-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8h1a4 4 0 0 1 0 8h-1"/><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"/><line x1="6" y1="1" x2="6" y2="4"/><line x1="10" y1="1" x2="10" y2="4"/><line x1="14" y1="1" x2="14" y2="4"/></svg>
+        </div>
         <div class="stat-card-value" id="total-announcements">—</div>
         <div class="stat-card-label">Total Announcements</div>
       </div>
       <div class="stat-card stat-orange">
+        <div class="stat-card-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        </div>
         <div class="stat-card-value" id="pending-count">—</div>
         <div class="stat-card-label">Pending Approval</div>
       </div>
       <div class="stat-card stat-green">
+        <div class="stat-card-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/></svg>
+        </div>
         <div class="stat-card-value" id="sessions-count">—</div>
         <div class="stat-card-label">Active Sessions</div>
       </div>
       <div class="stat-card stat-purple">
+        <div class="stat-card-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+        </div>
         <div class="stat-card-value" id="rooms-count">—</div>
         <div class="stat-card-label">Total Rooms</div>
       </div>
@@ -108,8 +85,16 @@
     </div>
   </main>
 
+  <script src="app.js"></script>
   <script>
+    checkAuth();
+
     const API = 'http://localhost:3000';
+    const user = getCurrentUser();
+    const isChairman = user && user.role === 'chairman';
+    const isAdmin    = user && user.role === 'admin';
+
+    renderSidebar('index.html');
 
     const CATEGORY_BADGE = {
       general: 'badge-blue',
@@ -144,18 +129,25 @@
 
         ann.slice(0, 10).forEach(a => {
           const catClass = CATEGORY_BADGE[a.category] || 'badge-gray';
-          const stClass  = STATUS_BADGE[a.status]    || 'badge-gray';
+          const stClass  = STATUS_BADGE[a.status]     || 'badge-gray';
+
+          // Chairman can approve pending; Admin can see status only in dashboard
+          let actionHtml = '<span class="text-muted text-sm">—</span>';
+          if (a.status === 'pending' && isChairman) {
+            actionHtml = `<button class="btn btn-success" onclick="approve(${a.announcement_id})">Approve</button>`;
+          } else if (a.status === 'approved') {
+            actionHtml = `<span class="badge badge-green">Approved</span>`;
+          } else if (a.status === 'pending' && isAdmin) {
+            actionHtml = `<span class="badge badge-amber">Awaiting Approval</span>`;
+          }
+
           tbody.innerHTML += `
             <tr>
-              <td><span class="font-medium">${a.title}</span></td>
+              <td><span class="font-semibold">${a.title}</span></td>
               <td><span class="badge ${catClass}">${a.category}</span></td>
               <td><span class="badge ${stClass}">${a.status}</span></td>
-              <td class="text-muted text-sm">${new Date(a.created_at).toLocaleDateString()}</td>
-              <td>
-                ${a.status === 'pending'
-                  ? `<button class="btn btn-success" onclick="approve(${a.announcement_id})">Approve</button>`
-                  : '<span class="badge badge-green">Approved</span>'}
-              </td>
+              <td class="text-secondary text-sm">${new Date(a.created_at).toLocaleDateString()}</td>
+              <td>${actionHtml}</td>
             </tr>`;
         });
 
@@ -167,9 +159,9 @@
 
     async function approve(id) {
       try {
-        const res = await fetch(`${API}/announcements/approve/${id}`, { method: 'POST' });
+        const res  = await fetch(`${API}/announcements/approve/${id}`, { method: 'POST' });
         const data = await res.json();
-        showToast(data.message || 'Approved successfully', 'success');
+        showToast(data.success ? 'Announcement approved and sent to display' : (data.message || 'Approval failed'), data.success ? 'success' : 'error');
         loadDashboard();
       } catch {
         showToast('Failed to approve announcement', 'error');

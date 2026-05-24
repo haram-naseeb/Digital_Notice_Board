@@ -2,10 +2,15 @@ const express = require('express');
 const mysql   = require('mysql2');
 const mqtt    = require('mqtt');
 const cors    = require('cors');
+const bcrypt  = require('bcryptjs');
 
 const app = express();
 app.use(cors());
 app.use(express.json());
+
+// Serve home.html as the default page
+app.get('/', (req, res) => res.sendFile(__dirname + '/home.html'));
+
 app.use(express.static('.'));
 
 // ---- MySQL Connection Pool ----
@@ -41,6 +46,50 @@ mqttClient.on('disconnect', () => {
 
 mqttClient.on('error', (err) => {
   console.log('❌ MQTT Error:', err);
+});
+
+// ========================================
+// AUTHENTICATION ROUTE
+// ========================================
+
+app.post('/login', (req, res) => {
+  const { username, password } = req.body;
+
+  if (!username || !password) {
+    return res.json({ success: false, message: 'Username and password required' });
+  }
+
+  const sql = 'SELECT user_id, username, password, role FROM users WHERE username = ?';
+  
+  db.query(sql, [username], async (err, results) => {
+    if (err) {
+      console.log('❌ Login error:', err);
+      return res.json({ success: false, message: 'Server error' });
+    }
+
+    if (results.length === 0) {
+      return res.json({ success: false, message: 'Invalid username or password' });
+    }
+
+    const user = results[0];
+
+    try {
+      const isValid = await bcrypt.compare(password, user.password);
+      
+      if (isValid) {
+        res.json({ 
+          success: true, 
+          username: user.username, 
+          role: user.role 
+        });
+      } else {
+        res.json({ success: false, message: 'Invalid username or password' });
+      }
+    } catch (err) {
+      console.log('❌ bcrypt error:', err);
+      res.json({ success: false, message: 'Server error' });
+    }
+  });
 });
 
 // ========================================
@@ -407,14 +456,28 @@ app.get('/sessions', (req, res) => {
 
 app.post('/sessions', (req, res) => {
   const { session_name, year, term, semester } = req.body;
-  db.query(
-    'INSERT INTO sessions (session_name, year, term, semester) VALUES (?, ?, ?, ?)',
-    [session_name, year, term, semester],
-    (err) => {
-      if (err) return res.json({ success: false, message: '❌ Error adding' });
-      res.json({ success: true, message: '✅ Session added!' });
+
+  if (!session_name || !year || !term || !semester) {
+    return res.json({ success: false, message: 'All fields are required' });
+  }
+
+  // Check for duplicate session (same year + term + semester)
+  const checkSql = 'SELECT session_id FROM sessions WHERE year = ? AND term = ? AND semester = ?';
+  db.query(checkSql, [year, term, semester], (err, results) => {
+    if (err) return res.json({ success: false, message: 'Error checking duplicate session' });
+    if (results.length > 0) {
+      return res.json({ success: false, message: `A session for ${term} ${year} Semester ${semester} already exists` });
     }
-  );
+
+    db.query(
+      'INSERT INTO sessions (session_name, year, term, semester) VALUES (?, ?, ?, ?)',
+      [session_name, year, term, semester],
+      (err) => {
+        if (err) return res.json({ success: false, message: 'Error adding session' });
+        res.json({ success: true, message: 'Session added successfully' });
+      }
+    );
+  });
 });
 
 app.delete('/sessions/:id', (req, res) => {

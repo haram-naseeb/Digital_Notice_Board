@@ -3,51 +3,38 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Notice Board — Announcements</title>
+  <head>
+  <link rel="icon" type="image/png" href="uet_cs_logo.jpg">
+  <title>Announcements — UET CS Notice Board</title>
+  </head>
+  <meta name="description" content="Manage departmental announcements for the UET CS Digital Notice Board.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
   <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js" defer></script>
-  <script src="app.js" defer></script>
 </head>
 <body>
 
-  <nav class="sidebar">
-    <a class="sidebar-brand" href="index.html">
-      <div class="sidebar-brand-icon"><i data-lucide="clipboard-list"></i></div>
-      <span class="sidebar-brand-text">Notice Board</span>
-    </a>
-    <div class="sidebar-nav">
-      <a href="index.html"><i data-lucide="layout-dashboard"></i> Dashboard</a>
-      <a href="announcements.html" class="active"><i data-lucide="megaphone"></i> Announcements</a>
-      <a href="timetable.html"><i data-lucide="calendar-days"></i> Timetable</a>
-      <div class="sidebar-section-label">Data Management</div>
-      <a href="sessions.html"><i data-lucide="graduation-cap"></i> Sessions</a>
-      <a href="sections.html"><i data-lucide="users"></i> Sections</a>
-      <a href="subjects.html"><i data-lucide="book-open"></i> Subjects</a>
-      <a href="rooms.html"><i data-lucide="door-open"></i> Rooms</a>
-      <a href="teachers.html"><i data-lucide="user-square"></i> Teachers</a>
-      <a href="offices.html"><i data-lucide="building-2"></i> Teacher Offices</a>
-    </div>
-    <div class="sidebar-footer">Department Admin Panel</div>
-  </nav>
+  <div id="sidebar-container"></div>
 
   <main class="main">
     <div class="page-header">
-      <h1>Announcements</h1>
-      <p class="subtitle">Add and manage department announcements</p>
+      <div class="page-header-left">
+        <h1 id="page-title">Announcements</h1>
+        <p class="subtitle" id="page-subtitle">Add and manage department announcements</p>
+      </div>
     </div>
 
-    <!-- Add Form -->
-    <div class="card">
+    <!-- Add Form — Admin only -->
+    <div class="card" id="add-form-card">
       <div class="card-header">
         <h2><i data-lucide="plus-circle"></i> New Announcement</h2>
       </div>
       <div class="form-grid">
         <div class="form-group">
           <label for="title">Title</label>
-          <input type="text" id="title" placeholder="Announcement title" />
+          <input type="text" id="title" placeholder="Announcement title">
         </div>
         <div class="form-group">
           <label for="category">Category</label>
@@ -59,26 +46,32 @@
         </div>
         <div class="form-group">
           <label for="start_datetime">Start Date &amp; Time</label>
-          <input type="datetime-local" id="start_datetime" />
+          <input type="datetime-local" id="start_datetime">
         </div>
         <div class="form-group">
           <label for="end_datetime">End Date &amp; Time</label>
-          <input type="datetime-local" id="end_datetime" />
+          <input type="datetime-local" id="end_datetime">
         </div>
         <div class="form-group span-2">
           <label for="message">Message</label>
           <textarea id="message" placeholder="Type announcement message here..."></textarea>
         </div>
       </div>
-      <button class="btn btn-primary" onclick="addAnnouncement()">
-        <i data-lucide="send"></i> Submit Announcement
+      <button class="btn btn-primary" id="submit-btn" onclick="addAnnouncement()">
+        <i data-lucide="send"></i> Submit for Approval
       </button>
     </div>
 
-    <!-- All Announcements -->
+    <!-- Chairman info banner -->
+    <div class="role-banner" id="chairman-banner" style="display:none;">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+      As Chairman, you can review and approve pending announcements submitted by the admin.
+    </div>
+
+    <!-- Announcements Table -->
     <div class="card">
       <div class="card-header">
-        <h2><i data-lucide="list"></i> All Announcements</h2>
+        <h2 id="table-title"><i data-lucide="list"></i> All Announcements</h2>
         <span id="ann-count" class="badge badge-gray">—</span>
       </div>
       <div class="table-wrap">
@@ -103,10 +96,27 @@
     </div>
   </main>
 
+  <script src="app.js"></script>
   <script>
-    const API = 'http://localhost:3000';
+    checkAuth();
+    renderSidebar('announcements.html');
+
+    const API         = 'http://localhost:3000';
+    const user        = getCurrentUser();
+    const isChairman  = user && user.role === 'chairman';
+    const isAdmin     = user && user.role === 'admin';
+
     const CATEGORY_BADGE = { general: 'badge-blue', urgent: 'badge-red', event: 'badge-purple' };
     const STATUS_BADGE   = { pending: 'badge-amber', approved: 'badge-green' };
+
+    // Configure view per role
+    if (isChairman) {
+      document.getElementById('add-form-card').style.display   = 'none';
+      document.getElementById('chairman-banner').style.display = 'flex';
+      document.getElementById('page-title').textContent        = 'Pending Approvals';
+      document.getElementById('page-subtitle').textContent     = 'Review and approve announcements submitted by admin';
+      document.getElementById('table-title').innerHTML         = '<i data-lucide="clock"></i> Pending Announcements';
+    }
 
     window.onload = () => {
       loadAnnouncements();
@@ -120,42 +130,49 @@
         const tbody = document.getElementById('announcements-list');
         tbody.innerHTML = '';
 
-        const now    = new Date();
-        const active = data.filter(a => new Date(a.end_datetime) > now);
+        // Chairman sees only pending; admin sees all
+        const toShow = isChairman ? data.filter(a => a.status === 'pending') : data;
 
-        document.getElementById('ann-count').textContent = `${active.length} active`;
+        document.getElementById('ann-count').textContent = `${toShow.length}`;
 
-        if (active.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="8" class="empty-row">No active announcements</td></tr>';
+        if (toShow.length === 0) {
+          const msg = isChairman ? 'No pending announcements' : 'No announcements yet';
+          tbody.innerHTML = `<tr><td colspan="8" class="empty-row">${msg}</td></tr>`;
           return;
         }
 
-        active.forEach((a, i) => {
-          const timeLeft = new Date(a.end_datetime) - now;
-          const expiring = timeLeft < 300000;
-          const catCls   = CATEGORY_BADGE[a.category] || 'badge-gray';
-          const stCls    = STATUS_BADGE[a.status]     || 'badge-gray';
+        toShow.forEach((a, i) => {
+          const catCls = CATEGORY_BADGE[a.category] || 'badge-gray';
+          const stCls  = STATUS_BADGE[a.status]     || 'badge-gray';
+
+          let actions = '';
+          // Chairman can approve pending
+          if (a.status === 'pending' && isChairman) {
+            actions += `<button class="btn btn-success" onclick="approve(${a.announcement_id})">
+              <i data-lucide="check"></i> Approve
+            </button>`;
+          }
+          // Admin can delete any
+          if (isAdmin) {
+            actions += `<button class="btn btn-danger" onclick="del(${a.announcement_id})">
+              <i data-lucide="trash-2"></i> Delete
+            </button>`;
+          }
+          if (!actions) actions = '<span class="text-muted text-sm">—</span>';
 
           tbody.innerHTML += `
             <tr>
               <td class="text-muted text-sm">${i + 1}</td>
-              <td>
-                <span class="font-medium">${expiring ? '<span class="badge badge-red" style="margin-right:5px">Expiring</span>' : ''}${a.title}</span>
-              </td>
-              <td class="text-muted text-sm" style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+              <td><span class="font-semibold">${a.title}</span></td>
+              <td class="text-secondary text-sm" style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
                 ${a.message ? a.message.substring(0, 45) + (a.message.length > 45 ? '…' : '') : '—'}
               </td>
               <td><span class="badge ${catCls}">${a.category}</span></td>
-              <td class="text-muted text-sm">${fmt(a.start_datetime)}</td>
-              <td class="text-muted text-sm">${fmt(a.end_datetime)}</td>
+              <td class="text-secondary text-sm">${fmt(a.start_datetime)}</td>
+              <td class="text-secondary text-sm">${fmt(a.end_datetime)}</td>
               <td><span class="badge ${stCls}">${a.status}</span></td>
               <td>
-                <div class="td-actions">
-                  ${a.status === 'pending'
-                    ? `<button class="btn btn-success" onclick="approve(${a.announcement_id})">Approve</button>`
-                    : '<span class="badge badge-green">Approved</span>'}
-                  <button class="btn btn-danger" onclick="del(${a.announcement_id})">Delete</button>
-                </div>
+                <div class="td-actions">${actions}</div>
               </td>
             </tr>`;
         });
@@ -174,35 +191,45 @@
       const end_datetime   = document.getElementById('end_datetime').value;
 
       if (!title || !message || !start_datetime || !end_datetime) {
-        showToast('Please fill in all fields', 'warning'); return;
+        showToast('Please fill in all fields', 'warning');
+        return;
       }
+
+      const btn = document.getElementById('submit-btn');
+      btn.disabled = true;
 
       try {
         const res  = await fetch(`${API}/announcements`, {
-          method: 'POST',
+          method:  'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ title, message, category, start_datetime, end_datetime })
+          body:    JSON.stringify({ title, message, category, start_datetime, end_datetime })
         });
         const data = await res.json();
-        showToast(data.message || 'Announcement added', res.ok ? 'success' : 'error');
+        showToast(data.success ? 'Announcement submitted for approval' : (data.message || 'Failed to add'), data.success ? 'success' : 'error');
 
-        if (res.ok) {
-          document.getElementById('title').value = '';
-          document.getElementById('message').value = '';
+        if (data.success) {
+          document.getElementById('title').value          = '';
+          document.getElementById('message').value        = '';
           document.getElementById('start_datetime').value = '';
-          document.getElementById('end_datetime').value = '';
+          document.getElementById('end_datetime').value   = '';
           loadAnnouncements();
         }
-      } catch { showToast('Failed to add announcement', 'error'); }
+      } catch {
+        showToast('Failed to add announcement', 'error');
+      } finally {
+        btn.disabled = false;
+      }
     }
 
     async function approve(id) {
       try {
         const res  = await fetch(`${API}/announcements/approve/${id}`, { method: 'POST' });
         const data = await res.json();
-        showToast(data.message || 'Approved', 'success');
+        showToast(data.success ? 'Announcement approved and sent to display' : (data.message || 'Approval failed'), data.success ? 'success' : 'error');
         loadAnnouncements();
-      } catch { showToast('Failed to approve', 'error'); }
+      } catch {
+        showToast('Failed to approve', 'error');
+      }
     }
 
     function del(id) {
@@ -210,9 +237,11 @@
         try {
           const res  = await fetch(`${API}/announcements/${id}`, { method: 'DELETE' });
           const data = await res.json();
-          showToast(data.message || 'Deleted', res.ok ? 'success' : 'error');
+          showToast(data.success ? 'Announcement deleted' : (data.message || 'Delete failed'), data.success ? 'success' : 'error');
           loadAnnouncements();
-        } catch { showToast('Failed to delete', 'error'); }
+        } catch {
+          showToast('Failed to delete', 'error');
+        }
       }, 'Delete Announcement');
     }
 

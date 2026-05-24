@@ -3,40 +3,27 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Notice Board — Timetable</title>
+  <head>
+  <link rel="icon" type="image/png" href="uet_cs_logo.jpg">
+  <title>Timetable — UET CS Notice Board</title>
+  </head>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
   <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js" defer></script>
-  <script src="app.js" defer></script>
 </head>
 <body>
 
-  <nav class="sidebar">
-    <a class="sidebar-brand" href="index.html">
-      <div class="sidebar-brand-icon"><i data-lucide="clipboard-list"></i></div>
-      <span class="sidebar-brand-text">Notice Board</span>
-    </a>
-    <div class="sidebar-nav">
-      <a href="index.html"><i data-lucide="layout-dashboard"></i> Dashboard</a>
-      <a href="announcements.html"><i data-lucide="megaphone"></i> Announcements</a>
-      <a href="timetable.html" class="active"><i data-lucide="calendar-days"></i> Timetable</a>
-      <div class="sidebar-section-label">Data Management</div>
-      <a href="sessions.html"><i data-lucide="graduation-cap"></i> Sessions</a>
-      <a href="sections.html"><i data-lucide="users"></i> Sections</a>
-      <a href="subjects.html"><i data-lucide="book-open"></i> Subjects</a>
-      <a href="rooms.html"><i data-lucide="door-open"></i> Rooms</a>
-      <a href="teachers.html"><i data-lucide="user-square"></i> Teachers</a>
-      <a href="offices.html"><i data-lucide="building-2"></i> Teacher Offices</a>
-    </div>
-    <div class="sidebar-footer">Department Admin Panel</div>
-  </nav>
+  <!-- ── Sidebar Container ──────────────────────────────── -->
+  <div id="sidebar-container"></div>
 
   <main class="main">
     <div class="page-header">
-      <h1>Timetable</h1>
-      <p class="subtitle">View and manage class schedules</p>
+      <div class="page-header-left">
+        <h1>Timetable</h1>
+        <p class="subtitle">Manage class schedules with conflict detection</p>
+      </div>
     </div>
 
     <!-- Filter -->
@@ -158,7 +145,12 @@
     </div>
   </main>
 
+  <script src="app.js"></script>
   <script>
+    // Auth guard - admin only
+    checkAuth('admin');
+    renderSidebar('timetable.html');
+
     const API = 'http://localhost:3000';
     let allData = [];
 
@@ -330,7 +322,7 @@
           method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data)
         });
         const result = await res.json();
-        showToast(result.message || 'Entry added', result.success ? 'success' : 'error');
+        showToast(result.success ? 'Timetable entry added' : (result.message || 'Failed to add entry'), result.success ? 'success' : 'error');
         if (result.success) {
           ['start_time','end_time','search-subject','search-teacher','search-room'].forEach(id => {
             document.getElementById(id).value = '';
