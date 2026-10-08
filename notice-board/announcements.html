@@ -92,12 +92,13 @@
     </div>
   </main>
 
+  <script src="config.js"></script>
   <script src="app.js"></script>
   <script>
     checkAuth();
     renderSidebar('announcements.html');
 
-    const API         = 'http://localhost:3000';
+    const API         = window.API_BASE;
     const user        = getCurrentUser();
     const isChairman  = user && user.role === 'chairman';
     const isAdmin     = user && user.role === 'admin';

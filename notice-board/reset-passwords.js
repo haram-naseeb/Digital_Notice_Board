@@ -8,14 +8,21 @@
  *   chairman  → chairman123
  */
 
+require('dotenv').config();
+
 const mysql = require('mysql2');
 const bcrypt = require('bcryptjs');
 
 const db = mysql.createConnection({
-  host: 'localhost',
-  user: 'root',
-  password: '1234567890-=1234567890-=',
-  database: 'digital_notice_board'
+  host: process.env.DB_HOST || 'localhost',
+  port: Number(process.env.DB_PORT || 3306),
+  user: process.env.DB_USER || 'root',
+  password: process.env.DB_PASSWORD || '',
+  database: process.env.DB_NAME || 'digital_notice_board',
+  ssl: process.env.DB_SSL === 'true' ? {
+    rejectUnauthorized: true,
+    ...(process.env.DB_SSL_CA ? { ca: process.env.DB_SSL_CA.replace(/\\n/g, '\n') } : {})
+  } : undefined
 });
 
 async function resetPasswords() {

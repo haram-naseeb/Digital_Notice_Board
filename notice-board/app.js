@@ -3,6 +3,36 @@
    Toast notifications + Confirm dialog + Auth system
    ================================================================ */
 
+window.API_BASE = (window.NOTICE_BOARD_API_URL || (
+  ['localhost', '127.0.0.1'].includes(window.location.hostname) ? 'http://localhost:3000' : ''
+)).replace(/\/$/, '');
+
+// Existing pages continue to use fetch(), while this adds the signed session
+// token to API requests. Roles stored in localStorage remain presentation-only.
+(() => {
+  const nativeFetch = window.fetch.bind(window);
+  window.fetch = async (input, init = {}) => {
+    const url = typeof input === 'string' ? input : input.url;
+    const apiOrigin = new URL(window.API_BASE || window.location.origin, window.location.origin).origin;
+    const requestOrigin = new URL(url, window.location.origin).origin;
+    if (requestOrigin === apiOrigin && !url.endsWith('/login')) {
+      let user;
+      try { user = JSON.parse(localStorage.getItem('nb_user') || 'null'); } catch { user = null; }
+      if (user && user.token) {
+        const headers = new Headers(init.headers || (input instanceof Request ? input.headers : undefined));
+        headers.set('Authorization', `Bearer ${user.token}`);
+        init = { ...init, headers };
+      }
+    }
+    const response = await nativeFetch(input, init);
+    if (response.status === 401 && !url.endsWith('/login')) {
+      localStorage.removeItem('nb_user');
+      window.location.href = 'login.html';
+    }
+    return response;
+  };
+})();
+
 /* ── Toast System ─────────────────────────────────────────────── */
 (function () {
   function getContainer() {

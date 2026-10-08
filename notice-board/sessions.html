@@ -83,12 +83,13 @@
     </div>
   </main>
 
+  <script src="config.js"></script>
   <script src="app.js"></script>
   <script>
     checkAuth('admin');
     renderSidebar('sessions.html');
 
-    const API = 'http://localhost:3000';
+    const API = window.API_BASE;
 
     window.onload = loadSessions;
 

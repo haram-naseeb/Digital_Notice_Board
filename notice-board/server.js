@@ -1,12 +1,39 @@
+require('dotenv').config();
+
 const express = require('express');
 const mysql   = require('mysql2');
 const mqtt    = require('mqtt');
 const cors    = require('cors');
 const bcrypt  = require('bcryptjs');
+const crypto  = require('crypto');
 
 const app = express();
-app.use(cors());
+const PORT = Number(process.env.PORT || 3000);
+const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || 'http://localhost:3000,http://127.0.0.1:3000')
+  .split(',').map(origin => origin.trim()).filter(Boolean);
+const JWT_SECRET = process.env.JWT_SECRET;
+
+if (process.env.NODE_ENV === 'production' && !JWT_SECRET) {
+  throw new Error('JWT_SECRET must be set in production.');
+}
+
+app.use(cors({
+  origin(origin, callback) {
+    // Native ESP32 requests and same-origin requests do not send an Origin header.
+    if (!origin || ALLOWED_ORIGINS.includes(origin)) return callback(null, true);
+    return callback(new Error('Origin is not allowed by CORS'));
+  },
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS']
+}));
 app.use(express.json());
+
+app.get('/health', (req, res) => {
+  db.query('SELECT 1', (err) => {
+    if (err) return res.status(503).json({ status: 'degraded', database: 'unavailable' });
+    res.json({ status: 'ok', database: 'connected' });
+  });
+});
 
 // Serve home.html as the default page
 app.get('/', (req, res) => res.sendFile(__dirname + '/home.html'));
@@ -16,10 +43,15 @@ app.use(express.static('.'));
 // ---- MySQL Connection Pool ----
 const db = mysql.createPool({
   connectionLimit: 10,
-  host:     'localhost',
-  user:     'root',
-  password: '1234567890-=1234567890-=',
-  database: 'digital_notice_board',
+  host:     process.env.DB_HOST || 'localhost',
+  port:     Number(process.env.DB_PORT || 3306),
+  user:     process.env.DB_USER || 'root',
+  password: process.env.DB_PASSWORD || '',
+  database: process.env.DB_NAME || 'digital_notice_board',
+  ssl: process.env.DB_SSL === 'true' ? {
+    rejectUnauthorized: true,
+    ...(process.env.DB_SSL_CA ? { ca: process.env.DB_SSL_CA.replace(/\\n/g, '\n') } : {})
+  } : undefined,
   waitForConnections:    true,
   enableKeepAlive:       true,
   keepAliveInitialDelay: 0,
@@ -61,6 +93,51 @@ mqttClient.on('error', (err) => {
 // AUTHENTICATION ROUTE
 // ========================================
 
+function createAccessToken(user) {
+  const payload = Buffer.from(JSON.stringify({
+    sub: user.user_id,
+    username: user.username,
+    role: user.role,
+    exp: Math.floor(Date.now() / 1000) + (Number(process.env.AUTH_TOKEN_TTL_HOURS || 8) * 60 * 60)
+  })).toString('base64url');
+  const secret = JWT_SECRET || 'development-only-change-me';
+  const signature = crypto.createHmac('sha256', secret).update(payload).digest('base64url');
+  return `${payload}.${signature}`;
+}
+
+function requireAuth(req, res, next) {
+  const value = req.get('Authorization') || '';
+  const token = value.startsWith('Bearer ') ? value.slice(7) : '';
+  const [payload, signature] = token.split('.');
+  const secret = JWT_SECRET || 'development-only-change-me';
+  const expected = crypto.createHmac('sha256', secret).update(payload || '').digest('base64url');
+
+  if (!payload || !signature || signature.length !== expected.length ||
+      !crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) {
+    return res.status(401).json({ success: false, message: 'Authentication required' });
+  }
+
+  try {
+    const user = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
+    if (!user.sub || !['admin', 'chairman'].includes(user.role) || user.exp < Math.floor(Date.now() / 1000)) {
+      throw new Error('Invalid token');
+    }
+    req.user = user;
+    next();
+  } catch {
+    return res.status(401).json({ success: false, message: 'Session expired. Please sign in again.' });
+  }
+}
+
+function requireRole(...roles) {
+  return (req, res, next) => {
+    if (!req.user || !roles.includes(req.user.role)) {
+      return res.status(403).json({ success: false, message: 'You are not authorized to perform this action.' });
+    }
+    next();
+  };
+}
+
 app.post('/login', (req, res) => {
   const { username, password } = req.body;
 
@@ -89,7 +166,8 @@ app.post('/login', (req, res) => {
         res.json({ 
           success: true, 
           username: user.username, 
-          role: user.role 
+          role: user.role,
+          token: createAccessToken(user)
         });
       } else {
         res.json({ success: false, message: 'Invalid username or password' });
@@ -101,11 +179,25 @@ app.post('/login', (req, res) => {
   });
 });
 
+// Server-side authorization for every existing write endpoint. The UI role is
+// only a convenience; this middleware is the security boundary.
+app.use((req, res, next) => {
+  if (!['POST', 'PUT', 'DELETE'].includes(req.method)) return next();
+  requireAuth(req, res, () => {
+    const chairmanOnly = /^\/announcements\/approve\/[^/]+$/.test(req.path);
+    const adminOnly = req.path !== '/announcements';
+    return requireRole(chairmanOnly ? 'chairman' : (adminOnly ? 'admin' : 'admin'))(req, res, next);
+  });
+});
+
 // ========================================
 // AUTO DELETE EXPIRED ANNOUNCEMENTS
 // ========================================
 
+let expiryCheckRunning = false;
 function checkExpiredAnnouncements() {
+  if (expiryCheckRunning) return;
+  expiryCheckRunning = true;
 
   console.log('⏱️ Checking for expired announcements...');
 
@@ -120,6 +212,7 @@ function checkExpiredAnnouncements() {
 
     if (err) {
       console.log('❌ Error checking expired:', err);
+      expiryCheckRunning = false;
       return;
     }
 
@@ -141,6 +234,7 @@ function checkExpiredAnnouncements() {
 
         if (err) {
           console.log('❌ Error deleting expired:', err);
+          expiryCheckRunning = false;
           return;
         }
 
@@ -164,12 +258,18 @@ function checkExpiredAnnouncements() {
             } else {
               console.log('📡 ✅ Clear signal sent to ESP32!');
             }
+            expiryCheckRunning = false;
 
           }
         );
+        // MQTT.js queues while reconnecting; do not let a delayed broker
+        // acknowledgement block future database expiry checks indefinitely.
+        setTimeout(() => { expiryCheckRunning = false; }, 10000).unref();
 
       });
 
+    } else {
+      expiryCheckRunning = false;
     }
 
   });
@@ -177,6 +277,7 @@ function checkExpiredAnnouncements() {
 }
 
 // Check every 30 seconds (increased frequency)
+checkExpiredAnnouncements();
 setInterval(checkExpiredAnnouncements, 30000);
 console.log('⏰ Auto-delete checker started! Running every 30 seconds');
 
@@ -397,7 +498,7 @@ app.delete('/announcements/:id', (req, res) => {
 // DIAGNOSTICS ENDPOINT
 // ========================================
 
-app.get('/diagnostics', (req, res) => {
+app.get('/diagnostics', requireAuth, requireRole('admin'), (req, res) => {
   const status = {
     mqtt_connected: mqttClient.connected,
     mqtt_server: 'broker.hivemq.com',
@@ -1184,11 +1285,23 @@ app.get('/teachers/offices', (req, res) => {
 });
 
 // ---- Start Server ----
-app.listen(3000, () => {
-  console.log('🚀 Server running at http://localhost:3000');
+const server = app.listen(PORT, () => {
+  console.log(`🚀 Server running on port ${PORT}`);
 });
 
 // ---- mDNS Advertisement ----
-const bonjour = require('bonjour')();
-bonjour.publish({ name: 'noticeboard', type: 'http', port: 3000 });
-console.log('📡 mDNS started — server reachable at noticeboard.local:3000');
+let bonjour;
+if (process.env.ENABLE_MDNS === 'true') {
+  bonjour = require('bonjour')();
+  bonjour.publish({ name: 'noticeboard', type: 'http', port: PORT });
+  console.log(`📡 mDNS started — server reachable at noticeboard.local:${PORT}`);
+}
+
+function shutdown(signal) {
+  console.log(`${signal} received; closing services...`);
+  if (bonjour) bonjour.destroy();
+  mqttClient.end(true);
+  server.close(() => db.end(() => process.exit(0)));
+}
+process.once('SIGTERM', () => shutdown('SIGTERM'));
+process.once('SIGINT', () => shutdown('SIGINT'));

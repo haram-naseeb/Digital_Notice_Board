@@ -68,13 +68,14 @@
     </div>
   </main>
 
+  <script src="config.js"></script>
   <script src="app.js"></script>
   <script>
     // Auth guard - admin only
     checkAuth('admin');
     renderSidebar('subjects.html');
 
-    const API = 'http://localhost:3000';
+    const API = window.API_BASE;
 
     window.onload = loadSubjects;
 

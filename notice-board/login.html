@@ -350,8 +350,9 @@
 
   </div>
 
+  <script src="config.js"></script>
   <script>
-    const API = 'http://localhost:3000';
+    const API = (window.NOTICE_BOARD_API_URL || (['localhost', '127.0.0.1'].includes(location.hostname) ? 'http://localhost:3000' : '')).replace(/\/$/, '');
 
     async function handleLogin(event) {
       event.preventDefault();
@@ -385,7 +386,8 @@
         if (data.success) {
           localStorage.setItem('nb_user', JSON.stringify({
             username: data.username,
-            role: data.role
+            role: data.role,
+            token: data.token
           }));
           window.location.href = 'index.html';
         } else {
