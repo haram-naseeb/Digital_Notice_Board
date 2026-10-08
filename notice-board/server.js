@@ -19,9 +19,18 @@ const db = mysql.createPool({
   host:     'localhost',
   user:     'root',
   password: '1234567890-=1234567890-=',
-  database: 'digital_notice_board'
+  database: 'digital_notice_board',
+  waitForConnections:    true,
+  enableKeepAlive:       true,
+  keepAliveInitialDelay: 0,
+  connectTimeout:        10000
 });
-
+setInterval(() => {
+  db.query('SELECT 1', (err) => {
+    if (err) console.log('⚠️ DB keep-alive ping failed:', err.message);
+    else     console.log('💓 DB keep-alive OK');
+  });
+}, 5 * 60 * 1000);
 console.log('✅ MySQL connection pool created (limit: 10 connections)!');
 
 // ---- MQTT Connection ----
@@ -275,30 +284,26 @@ app.get('/announcements/approved/all', (req, res) => {
   });
 });
 
+// AFTER:
 app.post('/announcements', (req, res) => {
-  const { title, message, category, start_datetime, end_datetime } = req.body;
+  const { title, message, category, end_datetime } = req.body;
 
-  // Basic validation
-  if (!title || !message || !category || !start_datetime || !end_datetime) {
+  if (!title || !message || !category || !end_datetime) {
     return res.status(400).json({ success: false, message: '❌ All fields are required.' });
   }
 
-  const start = new Date(start_datetime);
   const end = new Date(end_datetime);
   const now = new Date();
 
-  if (start < now) {
-    return res.status(400).json({ success: false, message: '❌ Start date cannot be in the past.' });
+  if (end <= now) {
+    return res.status(400).json({ success: false, message: '❌ End date must be in the future.' });
   }
 
-  if (end <= start) {
-    return res.status(400).json({ success: false, message: '❌ End date must be after the start date.' });
-  }
-
+  // start_datetime auto-set to NOW() — no user input needed
   const sql = `INSERT INTO announcements 
     (title, message, category, start_datetime, end_datetime, status) 
-    VALUES (?, ?, ?, ?, ?, 'pending')`;
-  db.query(sql, [title, message, category, start_datetime, end_datetime], (err) => {
+    VALUES (?, ?, ?, NOW(), ?, 'pending')`;
+  db.query(sql, [title, message, category, end_datetime], (err) => {
     if (err) {
       console.error('Error adding announcement:', err);
       return res.status(500).json({ success: false, message: '❌ Error adding announcement.' });
@@ -321,6 +326,7 @@ app.post('/announcements/approve/:id', (req, res) => {
         if (err) return res.json({ success: false, message: '❌ Error approving' });
 
         const payload = JSON.stringify({
+          action: 'new',   
           announcement_id: notice.announcement_id,
           title:    notice.title,
           message:  notice.message,
@@ -1181,3 +1187,8 @@ app.get('/teachers/offices', (req, res) => {
 app.listen(3000, () => {
   console.log('🚀 Server running at http://localhost:3000');
 });
+
+// ---- mDNS Advertisement ----
+const bonjour = require('bonjour')();
+bonjour.publish({ name: 'noticeboard', type: 'http', port: 3000 });
+console.log('📡 mDNS started — server reachable at noticeboard.local:3000');

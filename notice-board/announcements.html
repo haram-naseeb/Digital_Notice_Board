@@ -45,10 +45,6 @@
           </select>
         </div>
         <div class="form-group">
-          <label for="start_datetime">Start Date &amp; Time</label>
-          <input type="datetime-local" id="start_datetime">
-        </div>
-        <div class="form-group">
           <label for="end_datetime">End Date &amp; Time</label>
           <input type="datetime-local" id="end_datetime">
         </div>
@@ -184,13 +180,13 @@
     }
 
     async function addAnnouncement() {
-      const title          = document.getElementById('title').value.trim();
-      const message        = document.getElementById('message').value.trim();
-      const category       = document.getElementById('category').value;
-      const start_datetime = document.getElementById('start_datetime').value;
-      const end_datetime   = document.getElementById('end_datetime').value;
+      const title        = document.getElementById('title').value.trim();
+      const message      = document.getElementById('message').value.trim();
+      const category     = document.getElementById('category').value;
+      const end_datetime = document.getElementById('end_datetime').value;
 
-      if (!title || !message || !start_datetime || !end_datetime) {
+      // start_datetime is no longer required — set automatically on the backend
+      if (!title || !message || !end_datetime) {
         showToast('Please fill in all fields', 'warning');
         return;
       }
@@ -202,16 +198,19 @@
         const res  = await fetch(`${API}/announcements`, {
           method:  'POST',
           headers: { 'Content-Type': 'application/json' },
-          body:    JSON.stringify({ title, message, category, start_datetime, end_datetime })
+          // start_datetime intentionally omitted — backend uses NOW()
+          body:    JSON.stringify({ title, message, category, end_datetime })
         });
         const data = await res.json();
-        showToast(data.success ? 'Announcement submitted for approval' : (data.message || 'Failed to add'), data.success ? 'success' : 'error');
+        showToast(
+          data.success ? 'Announcement submitted for approval' : (data.message || 'Failed to add'),
+          data.success ? 'success' : 'error'
+        );
 
         if (data.success) {
-          document.getElementById('title').value          = '';
-          document.getElementById('message').value        = '';
-          document.getElementById('start_datetime').value = '';
-          document.getElementById('end_datetime').value   = '';
+          document.getElementById('title').value        = '';
+          document.getElementById('message').value      = '';
+          document.getElementById('end_datetime').value = '';
           loadAnnouncements();
         }
       } catch {
@@ -225,7 +224,10 @@
       try {
         const res  = await fetch(`${API}/announcements/approve/${id}`, { method: 'POST' });
         const data = await res.json();
-        showToast(data.success ? 'Announcement approved and sent to display' : (data.message || 'Approval failed'), data.success ? 'success' : 'error');
+        showToast(
+          data.success ? 'Announcement approved and sent to display' : (data.message || 'Approval failed'),
+          data.success ? 'success' : 'error'
+        );
         loadAnnouncements();
       } catch {
         showToast('Failed to approve', 'error');
@@ -237,7 +239,10 @@
         try {
           const res  = await fetch(`${API}/announcements/${id}`, { method: 'DELETE' });
           const data = await res.json();
-          showToast(data.success ? 'Announcement deleted' : (data.message || 'Delete failed'), data.success ? 'success' : 'error');
+          showToast(
+            data.success ? 'Announcement deleted' : (data.message || 'Delete failed'),
+            data.success ? 'success' : 'error'
+          );
           loadAnnouncements();
         } catch {
           showToast('Failed to delete', 'error');

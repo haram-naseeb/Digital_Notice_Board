@@ -7,7 +7,9 @@
 #include <ESP32Lib.h>
 #include <Ressources/Font6x8.h>
 #include <HTTPClient.h>
-
+#include <ESPmDNS.h>
+#include <Preferences.h>
+Preferences prefs;
 // ================= FORWARD DECLARATIONS =================
 struct Announcement;
 struct Category;
@@ -59,137 +61,18 @@ WiFiClient   mqttClient;
 PubSubClient client(mqttClient);
 
 // ================= MULTI-NETWORK HTTP CONFIG =================
-typedef struct {
-  const char* ssid;
-  const char* serverIP;
-} NetworkConfig;
+const char* serverIP = "192.168.0.112";
 
-NetworkConfig networks[] = {
-  { "Office",            ""              },
-  { "Fast net fiber n",  "192.168.0.109" },
-  { "HomeWiFi",          "192.168.1.100" },
-};
-const int NUM_NETWORKS = sizeof(networks) / sizeof(networks[0]);
-
-const char* serverIP = "192.168.0.137";
-
-void resolveServerIP() {
-  String currentSSID = WiFi.SSID();
-  Serial.printf("[HTTP] Connected SSID: %s\n", currentSSID.c_str());
-  for (int i = 0; i < NUM_NETWORKS; i++) {
-    if (currentSSID == networks[i].ssid) {
-      serverIP = networks[i].serverIP;
-      Serial.printf("[HTTP] Matched — server: %s\n", serverIP);
-      return;
-    }
-  }
-  Serial.printf("[HTTP] No match, using default: %s\n", serverIP);
-}
-
-// ================= COLORS =================
-int BLACK, WHITE, BLUE, YELLOW, CYAN, GRAY, LIGHT_BLUE, DARK_BLUE, RED, GREEN;
-
-// Cyberpunk Theme Colors — initialized after vga.init()
-int NEON_PINK;
-int NEON_BLUE;
-int DARK_CYBER;
-int CARD_DARK;
-int NEON_GREEN;
-int NEON_YELLOW;
-int NEON_PURPLE;
-int DIM_BLUE;
-int GLOW_CYAN;
-int NEON_CYAN;
-
-// ================= UI HELPERS =================
-void drawMenu();
-
-// --- Glow text (offset shadow + bright main) ---
-void drawGlowText(int x, int y, const char* text, int color, int bg) {
-  vga.setTextColor(vga.RGB(0, 0, 0), bg);
-  vga.setCursor(x - 1, y); vga.print(text);
-  vga.setCursor(x + 1, y); vga.print(text);
-  vga.setCursor(x, y - 1); vga.print(text);
-  vga.setCursor(x, y + 1); vga.print(text);
-  vga.setTextColor(color, bg);
-  vga.setCursor(x, y); vga.print(text);
-}
-
-// --- Pulsing badge for NEW notices ---
-int pulseSize = 8;
-bool pulseDirection = true;
-unsigned long lastPulseUpdate = 0;
-
-void updatePulse() {
-  if (millis() - lastPulseUpdate > 80) {
-    if (pulseDirection) {
-      pulseSize += 2;
-      if (pulseSize >= 14) pulseDirection = false;
-    } else {
-      pulseSize -= 2;
-      if (pulseSize <= 6) pulseDirection = true;
-    }
-    lastPulseUpdate = millis();
-  }
-}
-
-void drawPulseBadge(int x, int y) {
-  vga.fillCircle(x, y, pulseSize, RED);
-  vga.fillCircle(x, y, pulseSize - 3, WHITE);
-}
-
-// --- Shadow box ---
-void drawShadowBox(int x, int y, int w, int h, int mainColor, int borderColor) {
-  vga.fillRect(x + 3, y + 3, w, h, vga.RGB(10, 10, 20));
-  vga.fillRect(x, y, w, h, mainColor);
-  vga.fillRect(x, y, w, 2, borderColor);
-  vga.fillRect(x, y + h - 2, w, 2, borderColor);
-  vga.fillRect(x, y, 2, h, borderColor);
-  vga.fillRect(x + w - 2, y, 2, h, borderColor);
-}
-
-// --- Sound effects ---
-unsigned long lastBeepTime = 0;
-const int     BEEP_COOL    = 500;
-
-void beep(int times) {
-  if (millis() - lastBeepTime < BEEP_COOL) return;
-  for (int i = 0; i < times; i++) {
-    digitalWrite(buzzer, HIGH); delay(100);
-    digitalWrite(buzzer, LOW);
-    if (i < times - 1) delay(100);
-  }
-  lastBeepTime = millis();
-}
-
-void playSelectSound() {
-  tone(buzzer, 900, 40);
-  delay(40);
-  noTone(buzzer);
-}
-
-void playConfirmSound() {
-  tone(buzzer, 1200, 80);
-  delay(80);
-  tone(buzzer, 1800, 80);
-  delay(80);
-  noTone(buzzer);
-}
-
-enum UIState {
-  MENU,
-  URGENT_VIEW, GENERAL_VIEW, EVENT_VIEW, OFFICE_VIEW,
-  TT_YEAR, TT_SESSION, TT_SECTION, TT_DISPLAY,
-  OFFICE_FLOOR,
-  OFFICE_TEACHERS,
-  OFFICE_MAP,
-  FF_TEACHER_LIST,
-  FF_FLOOR_MAP,
-  FF_CABIN2_MAP,
-  FF_CABIN3_MAP
-};
-
-UIState currentState = MENU;
+// ================= 8 VGA COLORS =================
+// VGA3Bit only outputs 8 real colors — all vga.RGB() calls quantize to these.
+int C_BLACK;    // 0,0,0
+int C_RED;      // 255,0,0
+int C_GREEN;    // 0,255,0
+int C_YELLOW;   // 255,255,0
+int C_BLUE;     // 0,0,255
+int C_MAGENTA;  // 255,0,255
+int C_CYAN;     // 0,255,255
+int C_WHITE;    // 255,255,255
 
 // ================= ANNOUNCEMENTS =================
 struct Announcement {
@@ -216,6 +99,9 @@ const int MAX_SEEN_ANNOUNCEMENTS = 50;
 int seenAnnouncements[MAX_SEEN_ANNOUNCEMENTS] = {0};
 int seenCount = 0;
 
+int notifiedAnnouncements[MAX_SEEN_ANNOUNCEMENTS] = {0};
+int notifiedCount = 0;
+
 bool hasSeenAnnouncement(int annId) {
   for (int i = 0; i < seenCount; i++)
     if (seenAnnouncements[i] == annId) return true;
@@ -225,6 +111,36 @@ bool hasSeenAnnouncement(int annId) {
 void markAnnouncementAsSeen(int annId) {
   if (!hasSeenAnnouncement(annId) && seenCount < MAX_SEEN_ANNOUNCEMENTS)
     seenAnnouncements[seenCount++] = annId;
+}
+
+void loadNotifiedFromFlash() {
+  prefs.begin("notified", false);
+  notifiedCount = prefs.getInt("count", 0);
+  for (int i = 0; i < notifiedCount; i++) {
+    char key[10];
+    sprintf(key, "id%d", i);
+    notifiedAnnouncements[i] = prefs.getInt(key, 0);
+  }
+  prefs.end();
+}
+
+bool hasNotifiedUser(int annId) {
+  for (int i = 0; i < notifiedCount; i++)
+    if (notifiedAnnouncements[i] == annId) return true;
+  return false;
+}
+
+void markNotifiedUser(int annId) {
+  if (hasNotifiedUser(annId)) return;
+  if (notifiedCount >= MAX_SEEN_ANNOUNCEMENTS) return;
+  notifiedAnnouncements[notifiedCount] = annId;
+  prefs.begin("notified", false);
+  char key[10];
+  sprintf(key, "id%d", notifiedCount);
+  prefs.putInt(key, annId);
+  notifiedCount++;
+  prefs.putInt("count", notifiedCount);
+  prefs.end();
 }
 
 // ================= YEARS/SESSIONS/SECTIONS =================
@@ -295,14 +211,8 @@ bool detectEvening(const char* sessionName) {
 
 void buildTimetableGrid() {
   memset(&ttGrid, 0, sizeof(ttGrid));
-
-  if (currentTT.isEvening) {
-    ttGrid.slotStart = 13;
-    ttGrid.slotCount = 7;
-  } else {
-    ttGrid.slotStart = 8;
-    ttGrid.slotCount = 8;
-  }
+  if (currentTT.isEvening) { ttGrid.slotStart = 13; ttGrid.slotCount = 7; }
+  else                      { ttGrid.slotStart = 8;  ttGrid.slotCount = 8; }
 
   for (int d = 0; d < MAX_DAYS; d++)
     for (int s = 0; s < MAX_SLOTS; s++) {
@@ -315,23 +225,17 @@ void buildTimetableGrid() {
     TTEntry& e = currentTT.entries[i];
     int dayIdx = e.dayId - 1;
     if (dayIdx < 0 || dayIdx >= MAX_DAYS) continue;
-
     int startHour = 0, endHour = 0;
     sscanf(e.startTime, "%d:", &startHour);
     sscanf(e.endTime,   "%d:", &endHour);
-
     int startSlot = startHour - ttGrid.slotStart;
     int span      = endHour - startHour;
     if (span < 1) span = 1;
     if (startSlot < 0 || startSlot >= ttGrid.slotCount) continue;
     if (startSlot + span > ttGrid.slotCount) span = ttGrid.slotCount - startSlot;
-
-    strncpy(ttGrid.cellCode[dayIdx][startSlot], e.code, 9);
-    ttGrid.cellCode[dayIdx][startSlot][9] = '\0';
-    strncpy(ttGrid.cellRoom[dayIdx][startSlot], e.room, 9);
-    ttGrid.cellRoom[dayIdx][startSlot][9] = '\0';
+    strncpy(ttGrid.cellCode[dayIdx][startSlot], e.code, 9); ttGrid.cellCode[dayIdx][startSlot][9] = '\0';
+    strncpy(ttGrid.cellRoom[dayIdx][startSlot], e.room, 9); ttGrid.cellRoom[dayIdx][startSlot][9] = '\0';
     ttGrid.cellSpan[dayIdx][startSlot] = span;
-
     for (int j = 1; j < span; j++)
       if (startSlot + j < ttGrid.slotCount)
         ttGrid.cellSpan[dayIdx][startSlot + j] = -1;
@@ -344,14 +248,11 @@ struct SubjectColor { int bg; int text; };
 SubjectColor getSubjectColor(const char* code) {
   unsigned int hash = 0;
   for (int i = 0; code[i]; i++) hash = hash * 31 + (unsigned char)code[i];
-  switch (hash % 6) {
-    case 0: return { vga.RGB(0,   0,   150), vga.RGB(140, 200, 255) };
-    case 1: return { vga.RGB(140, 0,   0),   vga.RGB(255, 160, 160) };
-    case 2: return { vga.RGB(0,   110, 50),  vga.RGB(160, 255, 200) };
-    case 3: return { vga.RGB(120, 65,  0),   vga.RGB(255, 210, 140) };
-    case 4: return { vga.RGB(90,  0,   140), vga.RGB(220, 160, 255) };
-    case 5: return { vga.RGB(0,   100, 110), vga.RGB(160, 255, 255) };
-    default:return { vga.RGB(70,  70,  70),  vga.RGB(220, 220, 220) };
+  switch (hash % 3) {
+    case 0: return { C_CYAN,  C_BLACK };
+    case 1: return { C_BLUE,  C_WHITE };
+    case 2: return { C_WHITE, C_BLACK };
+    default: return { C_BLUE, C_WHITE };
   }
 }
 
@@ -390,11 +291,12 @@ const int   OFFICE_FLOOR_COUNT = 2;
 int         selOfficeFloor     = 0;
 int         officeFloorScroll  = 0;
 
-// ================= NAVIGATION STATE =================
+// ================= GROUND FLOOR NAV =================
 int selOfficeTeacher    = 0;
 int officeTeacherScroll = 0;
 int officeHighlightRoom = -1;
 
+// ================= FIRST FLOOR NAV =================
 int selFFTeacher    = 0;
 int ffTeacherScroll = 0;
 int ffSelectedTeacherIdx  = -1;
@@ -404,7 +306,16 @@ int selCabin2Slot = 0;
 int selCabin3Slot = 0;
 
 // ================= UI STATE =================
+enum UIState {
+  MENU,
+  URGENT_VIEW, GENERAL_VIEW, EVENT_VIEW, OFFICE_VIEW,
+  TT_YEAR, TT_SESSION, TT_SECTION, TT_DISPLAY,
+  OFFICE_FLOOR,
+  OFFICE_TEACHERS, OFFICE_MAP,
+  FF_TEACHER_LIST, FF_FLOOR_MAP, FF_CABIN2_MAP, FF_CABIN3_MAP
+};
 
+UIState currentState     = MENU;
 int     selectedMenu     = 0;
 int     selYear          = 0;
 int     selSession       = 0;
@@ -416,14 +327,27 @@ int     sectionScrollOff = 0;
 // ================= TIMING =================
 unsigned long lastPress    = 0;
 const int     DEBOUNCE     = 250;
+unsigned long lastBeepTime = 0;
+const int     BEEP_COOL    = 500;
 unsigned long lastAnnFetch = -31000UL;
 const int     ANN_FETCH_INTERVAL = 30000;
 
+void drawMenu();
 void updateLEDs();
 
 // ========================================
-// CORE DRAWING PRIMITIVES
+// HELPERS
 // ========================================
+void beep(int times) {
+  if (millis() - lastBeepTime < BEEP_COOL) return;
+  for (int i = 0; i < times; i++) {
+    digitalWrite(buzzer, HIGH); delay(100);
+    digitalWrite(buzzer, LOW);
+    if (i < times - 1) delay(100);
+  }
+  lastBeepTime = millis();
+}
+
 void centerText(int y, const char* txt, int color, int bg) {
   int x = (400 - strlen(txt) * 6) / 2;
   if (x < 5) x = 5;
@@ -439,129 +363,78 @@ void leftText(int x, int y, const char* txt, int color, int bg) {
 }
 
 void drawBox(int x, int y, int w, int h, int color) {
-  vga.fillRect(x,         y,         w, 2, color);
-  vga.fillRect(x,         y + h - 2, w, 2, color);
-  vga.fillRect(x,         y,         2, h, color);
-  vga.fillRect(x + w - 2, y,         2, h, color);
+  vga.fillRect(x,         y,         w, 1, color);
+  vga.fillRect(x,         y + h - 1, w, 1, color);
+  vga.fillRect(x,         y,         1, h, color);
+  vga.fillRect(x + w - 1, y,         1, h, color);
 }
 
-// Glow box — outer rings + dark interior
-void drawGlowBox(int x, int y, int w, int h, int color, int intensity = 3) {
-  for (int i = 1; i <= intensity; i++) {
-    drawBox(x - i, y - i, w + (i * 2), h + (i * 2), color);
-  }
-  vga.fillRect(x, y, w, h, DARK_CYBER);
-  drawBox(x, y, w, h, color);
+void drawBoxDouble(int x, int y, int w, int h, int outerC, int innerC) {
+  drawBox(x,     y,     w,     h,     outerC);
+  drawBox(x + 2, y + 2, w - 4, h - 4, innerC);
 }
 
-// ========================================
-// HEADER & FOOTER
-// ========================================
-void drawSystemStats() {
-  if (client.connected()) {
-    vga.fillCircle(375, 25, 6, NEON_GREEN);
-    vga.fillCircle(375, 25, 3, vga.RGB(200, 255, 200));
-  } else {
-    vga.fillCircle(375, 25, 6, vga.RGB(120, 0, 0));
-    vga.fillCircle(375, 25, 3, vga.RGB(60, 0, 0));
-  }
-  vga.fillRect(348, 10, 3, 3, NEON_PINK);
-  vga.fillRect(354, 10, 3, 3, NEON_BLUE);
-  vga.fillRect(360, 10, 3, 3, NEON_GREEN);
-}
-
+// -----------------------------------------------------------------------
+// HEADER
+// -----------------------------------------------------------------------
 void drawHeader() {
-  vga.fillRect(0, 0, 400, 52, DARK_CYBER);
+  vga.fillRect(0, 0, 400, 46, C_BLUE);
+  vga.fillRect(0, 0, 400, 3, C_YELLOW);
+  vga.fillRect(0, 44, 400, 2, C_WHITE);
 
-  for (int x = 0; x < 400; x += 20) {
-    vga.fillRect(x, 0, 1, 52, vga.RGB(0, 40, 50));
-  }
+  vga.setTextColor(C_WHITE, C_BLUE);
+  vga.setCursor(8, 8);
+  vga.print("UET CS DEPT");
 
-  vga.fillRect(0, 49, 400, 1, vga.RGB(0, 80, 100));
-  vga.fillRect(0, 50, 400, 2, NEON_BLUE);
-
-  vga.fillRect(8, 8, 36, 36, NEON_PINK);
-  drawBox(8, 8, 36, 36, NEON_BLUE);
-  vga.setTextColor(DARK_CYBER, NEON_PINK);
-  vga.setCursor(16, 22);
-  vga.print("NB");
-
-  drawGlowText(54, 14, ">> NEURAL INTERFACE <<", NEON_PINK, DARK_CYBER);
-  vga.setTextColor(NEON_BLUE, DARK_CYBER);
-  vga.setCursor(60, 32);
-  vga.print("[ DEPT NOTICE BOARD ]");
-
-  drawSystemStats();
+  centerText(22, "DEPARTMENT NOTICE BOARD", C_WHITE, C_BLUE);
 }
 
+// -----------------------------------------------------------------------
+// FOOTER
+// -----------------------------------------------------------------------
 void drawFooter(const char* hint) {
-  vga.fillRect(0, 284, 400, 16, DARK_CYBER);
-  vga.fillRect(0, 284, 400, 1, vga.RGB(0, 80, 100));
-  vga.fillRect(0, 285, 400, 1, NEON_BLUE);
-
-  vga.fillRect(8,  288, 55, 10, vga.RGB(30, 40, 60));
-  vga.setTextColor(NEON_BLUE, vga.RGB(30, 40, 60));
-  vga.setCursor(12, 290); vga.print("UP/DOWN");
-
-  vga.fillRect(70, 288, 45, 10, vga.RGB(30, 40, 60));
-  vga.setTextColor(NEON_PINK, vga.RGB(30, 40, 60));
-  vga.setCursor(74, 290); vga.print("ENTER");
-
-  vga.fillRect(122, 288, 35, 10, vga.RGB(30, 40, 60));
-  vga.setTextColor(vga.RGB(255, 120, 0), vga.RGB(30, 40, 60));
-  vga.setCursor(126, 290); vga.print("BACK");
+  vga.fillRect(0, 286, 400, 14, C_BLUE);
+  vga.fillRect(0, 285, 400, 1,  C_WHITE);
 
   if (client.connected()) {
-    vga.setTextColor(NEON_GREEN, DARK_CYBER);
-    vga.setCursor(245, 290); vga.print("[MQTT:OK]");
+    vga.fillRect(6, 288, 28, 10, C_GREEN);
+    vga.setTextColor(C_WHITE, C_GREEN);
+    vga.setCursor(8, 290); vga.print("LIVE");
   } else {
-    vga.setTextColor(vga.RGB(220, 50, 50), DARK_CYBER);
-    vga.setCursor(240, 290); vga.print("[OFFLINE]");
+    vga.fillRect(6, 288, 28, 10, C_RED);
+    vga.setTextColor(C_WHITE, C_RED);
+    vga.setCursor(8, 290); vga.print("OFF ");
   }
 
-  if (strlen(hint) > 0) {
-    vga.setTextColor(vga.RGB(90, 90, 130), DARK_CYBER);
-    vga.setCursor(164, 290);
-    vga.print(hint);
-  }
+  leftText(42, 290, hint, C_WHITE, C_BLUE);
 }
 
+// -----------------------------------------------------------------------
+// Base screen
+// -----------------------------------------------------------------------
 void drawBase(const char* hint) {
-  vga.clear(BLACK);
+  vga.clear(C_WHITE);
   drawHeader();
   drawFooter(hint);
 }
 
-// ========================================
-// LOADING SCREEN
-// ========================================
+// -----------------------------------------------------------------------
+// Loading screen
+// -----------------------------------------------------------------------
 void showLoading(const char* msg) {
-  vga.clear(BLACK);
-  vga.fillRect(0, 0, 400, 52, DARK_CYBER);
-  for (int x = 0; x < 400; x += 20) vga.fillRect(x, 0, 1, 52, vga.RGB(0, 40, 50));
-  vga.fillRect(0, 50, 400, 2, NEON_BLUE);
+  vga.clear(C_BLACK);
+  drawHeader();
 
-  drawBox(20, 100, 360, 80, NEON_BLUE);
-  drawBox(22, 102, 356, 76, vga.RGB(0, 40, 80));
+  vga.fillRect(60, 110, 280, 70, C_BLACK);
+  drawBox(60, 110, 280, 70, C_CYAN);
+  vga.fillRect(60, 110, 280, 3, C_BLUE);
 
-  int msgX = (400 - strlen(msg) * 6) / 2;
-  vga.setTextColor(NEON_BLUE, BLACK);
-  vga.setCursor(msgX, 128);
-  vga.print(msg);
+  centerText(130, msg,              C_WHITE, C_BLACK);
+  centerText(148, "Please wait...", C_CYAN,  C_BLACK);
 
-  vga.fillRect(60, 148, 280, 10, vga.RGB(20, 20, 40));
-  drawBox(60, 148, 280, 10, vga.RGB(0, 60, 100));
-
-  vga.fillRect(62, 150, 168, 6, NEON_BLUE);
-
-  for (int i = 0; i < 3; i++) {
-    vga.fillCircle(178 + i * 14, 170, 3, (i == 1) ? NEON_PINK : vga.RGB(40, 40, 80));
-  }
+  drawFooter("");
 }
 
-// ========================================
-// LED MANAGEMENT
-// ========================================
 void updateLEDs() {
   bool u = false, g = false, e = false;
   for (int i = 0; i < urgent.count;   i++) if (urgent.items[i].isNew)   u = true;
@@ -572,9 +445,6 @@ void updateLEDs() {
   digitalWrite(yellowLED, e);
 }
 
-// ========================================
-// ANNOUNCEMENT HELPERS
-// ========================================
 void addToCategory(Category &cat, int annId, const char* title, const char* msg, bool isNewAnn = true) {
   if (cat.count >= MAX_PER_CAT) {
     for (int i = 0; i < MAX_PER_CAT - 1; i++) cat.items[i] = cat.items[i + 1];
@@ -585,7 +455,12 @@ void addToCategory(Category &cat, int annId, const char* title, const char* msg,
   cat.items[cat.count].title[59]    = '\0';
   cat.items[cat.count].message[199] = '\0';
   cat.items[cat.count].id    = annId;
-  cat.items[cat.count].isNew = hasSeenAnnouncement(annId) ? false : isNewAnn;
+  cat.items[cat.count].isNew = !hasNotifiedUser(annId);   // your fixed line
+
+  // ADD THIS — jump index to newest if it's a fresh arrival via MQTT
+  if (isNewAnn && !hasNotifiedUser(annId))
+    cat.index = cat.count;
+
   if (isNewAnn) markAnnouncementAsSeen(annId);
   cat.count++;
 }
@@ -596,7 +471,41 @@ void clearAllCategories() {
   eventCat.count = 0; eventCat.index = 0;
   office.count   = 0; office.index   = 0;
 }
+void pruneNotifiedFlash() {
+  // Build list of currently active announcement IDs
+  int activeIds[MAX_PER_CAT * 4];
+  int activeCount = 0;
+  for (int i = 0; i < urgent.count;   i++) activeIds[activeCount++] = urgent.items[i].id;
+  for (int i = 0; i < general.count;  i++) activeIds[activeCount++] = general.items[i].id;
+  for (int i = 0; i < eventCat.count; i++) activeIds[activeCount++] = eventCat.items[i].id;
+  for (int i = 0; i < office.count;   i++) activeIds[activeCount++] = office.items[i].id;
 
+  // Keep only IDs that still exist
+  int kept[MAX_SEEN_ANNOUNCEMENTS];
+  int keptCount = 0;
+  for (int i = 0; i < notifiedCount; i++) {
+    for (int j = 0; j < activeCount; j++) {
+      if (notifiedAnnouncements[i] == activeIds[j]) {
+        kept[keptCount++] = notifiedAnnouncements[i];
+        break;
+      }
+    }
+  }
+
+  // Rewrite flash only if something was pruned
+  if (keptCount < notifiedCount) {
+    for (int i = 0; i < keptCount; i++) notifiedAnnouncements[i] = kept[i];
+    notifiedCount = keptCount;
+    prefs.begin("notified", false);
+    prefs.clear();
+    prefs.putInt("count", notifiedCount);
+    for (int i = 0; i < notifiedCount; i++) {
+      char key[10]; sprintf(key, "id%d", i);
+      prefs.putInt(key, notifiedAnnouncements[i]);
+    }
+    prefs.end();
+  }
+}
 // ========================================
 // HTTP FUNCTIONS
 // ========================================
@@ -605,13 +514,11 @@ void fetchAnnouncements() {
   HTTPClient http;
   String url = String("http://") + serverIP + ":3000/announcements/approved/all";
   if (!http.begin(httpClient, url)) return;
-
   int code = http.GET();
   if (code == 200) {
     String payload = http.getString();
     DynamicJsonDocument doc(4096);
     if (deserializeJson(doc, payload)) { http.end(); return; }
-
     clearAllCategories();
     for (JsonObject ann : doc.as<JsonArray>()) {
       int         annId    = ann["announcement_id"] | 0;
@@ -625,6 +532,7 @@ void fetchAnnouncements() {
       markAnnouncementAsSeen(annId);
     }
     updateLEDs();
+    pruneNotifiedFlash();
     if (currentState == MENU) drawMenu();
   }
   http.end();
@@ -697,278 +605,251 @@ void fetchSections(int sessionId) {
 }
 
 void fetchTimetable(int yIdx, int sIdx, int secIdx) {
-  if (WiFi.status() != WL_CONNECTED) return;
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("WiFi not connected - cannot fetch timetable");
+    currentTT.count = 0;
+    return;
+  }
+
+  if (yIdx < 0 || yIdx >= totalYears || sIdx < 0 || sIdx >= totalSessions || secIdx < 0 || secIdx >= totalSections) {
+    currentTT.count = 0;
+    return;
+  }
 
   int yearId    = years[yIdx].id;
   int sessionId = sessions[sIdx].id;
   int sectionId = sections[secIdx].id;
 
-  HTTPClient http;
-  String url = String("http://") + serverIP + ":3000/timetable/" + yearId + "/" + sessionId + "/" + sectionId;
-  if (!http.begin(httpClient, url)) return;
-  http.setConnectTimeout(5000); http.setTimeout(10000);
+  WiFiClient timetableClient;
+  String path = String("/timetable/") + yearId + "/" + sessionId + "/" + sectionId;
+  String url  = String("http://") + serverIP + ":3000" + path;
 
-  int code = http.GET();
-  if (code == 200) {
-    String payload = http.getString();
-    DynamicJsonDocument doc(6144);
-    DeserializationError error = deserializeJson(doc, payload);
+  Serial.println("================ TIMETABLE FETCH ================");
+  Serial.print("Selected year: ");    Serial.print(yearId);    Serial.print(" ("); Serial.print(years[yIdx].name);       Serial.println(")");
+  Serial.print("Selected session: "); Serial.print(sessionId); Serial.print(" ("); Serial.print(sessions[sIdx].name);    Serial.println(")");
+  Serial.print("Selected section: "); Serial.print(sectionId); Serial.print(" ("); Serial.print(sections[secIdx].name);  Serial.println(")");
+  Serial.print("URL: "); Serial.println(url);
 
-    if (!error && doc["success"] == true) {
-      currentTT.count      = 0;
-      currentTT.yearIdx    = yIdx;
-      currentTT.sessionIdx = sIdx;
-      currentTT.sectionIdx = secIdx;
-
-      strncpy(currentTT.semester,     doc["semester"]     | "Unknown", 19);
-      strncpy(currentTT.session_name, doc["session_name"] | "Unknown", 39);
-      strncpy(currentTT.term,         doc["term"]         | "Unknown", 19);
-      currentTT.semester[19]     = '\0';
-      currentTT.session_name[39] = '\0';
-      currentTT.term[19]         = '\0';
-
-      currentTT.isEvening = detectEvening(currentTT.session_name);
-
-      for (JsonObject e : doc["data"].as<JsonArray>()) {
-        if (currentTT.count >= MAX_TT_ENTRIES) break;
-        int i = currentTT.count;
-
-        strncpy(currentTT.entries[i].startTime, e["start_time"]   | "00:00:00", 9);
-        strncpy(currentTT.entries[i].endTime,   e["end_time"]     | "00:00:00", 9);
-        strncpy(currentTT.entries[i].subject,   e["subject_name"] | "", 29);
-        strncpy(currentTT.entries[i].code,      e["subject_code"] | "", 9);
-        strncpy(currentTT.entries[i].teacher,   e["teacher_name"] | "", 29);
-        strncpy(currentTT.entries[i].room,      e["room_number"]  | "", 9);
-        strncpy(currentTT.entries[i].dayName,   e["day_name"]     | "MON", 3);
-
-        currentTT.entries[i].startTime[9] = '\0';
-        currentTT.entries[i].endTime[9]   = '\0';
-        currentTT.entries[i].subject[29]  = '\0';
-        currentTT.entries[i].code[9]      = '\0';
-        currentTT.entries[i].teacher[29]  = '\0';
-        currentTT.entries[i].room[9]      = '\0';
-        currentTT.entries[i].dayName[3]   = '\0';
-
-        currentTT.entries[i].dayId = e["day_id"] | 1;
-        currentTT.count++;
-      }
-
-      if (!currentTT.isEvening && currentTT.count > 0) {
-        int firstHour = 0;
-        sscanf(currentTT.entries[0].startTime, "%d:", &firstHour);
-        if (firstHour >= 13) currentTT.isEvening = true;
-      }
-
-      Serial.printf("Loaded %d TT entries | %s - %s | %s\n",
-        currentTT.count, currentTT.semester, currentTT.term, currentTT.session_name);
-      Serial.printf("Mode: %s\n", currentTT.isEvening ? "Evening (13-19)" : "Morning (8-15)");
-    }
+  if (!timetableClient.connect(serverIP, 3000)) {
+    currentTT.count = 0;
+    return;
   }
-  http.end();
+
+  timetableClient.setTimeout(10000);
+  timetableClient.print(String("GET ") + path + " HTTP/1.0\r\n");
+  timetableClient.print(String("Host: ") + serverIP + "\r\n");
+  timetableClient.print("Connection: close\r\n");
+  timetableClient.print("Accept: application/json\r\n\r\n");
+
+  unsigned long startWait = millis();
+  while (!timetableClient.available() && millis() - startWait < 10000) delay(10);
+
+  String statusLine = timetableClient.readStringUntil('\n');
+  statusLine.trim();
+  int code = 0;
+  if (statusLine.startsWith("HTTP/")) {
+    int firstSpace = statusLine.indexOf(' ');
+    if (firstSpace > 0) code = statusLine.substring(firstSpace + 1, firstSpace + 4).toInt();
+  }
+
+  currentTT.count = 0;
+  currentTT.yearIdx    = yIdx;
+  currentTT.sessionIdx = sIdx;
+  currentTT.sectionIdx = secIdx;
+  strncpy(currentTT.semester,     "Unknown",           19);
+  strncpy(currentTT.session_name, sessions[sIdx].name, 39);
+  strncpy(currentTT.term,         "Unknown",           19);
+  currentTT.semester[19]     = '\0';
+  currentTT.session_name[39] = '\0';
+  currentTT.term[19]         = '\0';
+  currentTT.isEvening = detectEvening(currentTT.session_name);
+
+  if (code != 200) {
+    timetableClient.stop();
+    return;
+  }
+
+  int contentLength = -1;
+  while (timetableClient.connected()) {
+    String header = timetableClient.readStringUntil('\n');
+    header.trim();
+    if (header.length() == 0) break;
+    if (header.startsWith("Content-Length:") || header.startsWith("content-length:"))
+      contentLength = header.substring(header.indexOf(':') + 1).toInt();
+  }
+
+  String payload;
+  if (contentLength > 0) payload.reserve(contentLength + 1);
+
+  unsigned long lastRead = millis();
+  while ((timetableClient.connected() || timetableClient.available()) && millis() - lastRead < 10000) {
+    while (timetableClient.available()) {
+      payload += (char)timetableClient.read();
+      lastRead = millis();
+    }
+    delay(1);
+  }
+  timetableClient.stop();
+
+  Serial.print("Payload length: "); Serial.println(payload.length());
+
+  DynamicJsonDocument doc(24576);
+  DeserializationError error = deserializeJson(doc, payload);
+  if (error) { Serial.print("JSON parse failed: "); Serial.println(error.c_str()); return; }
+
+  bool ok = doc["success"] | false;
+  if (!ok) { Serial.println("Server returned success=false"); return; }
+
+  strncpy(currentTT.semester,     doc["semester"]     | "Unknown",          19);
+  strncpy(currentTT.session_name, doc["session_name"] | sessions[sIdx].name,39);
+  strncpy(currentTT.term,         doc["term"]         | "Unknown",          19);
+  currentTT.semester[19]     = '\0';
+  currentTT.session_name[39] = '\0';
+  currentTT.term[19]         = '\0';
+  currentTT.isEvening = detectEvening(currentTT.session_name);
+
+  for (JsonObject e : doc["data"].as<JsonArray>()) {
+    if (currentTT.count >= MAX_TT_ENTRIES) break;
+    int i = currentTT.count;
+
+    const char* startTime = e["start_time"]    | "00:00:00";
+    const char* endTime   = e["end_time"]      | "00:00:00";
+    const char* subject   = e["subject_name"]  | "";
+    const char* codeText  = e["subject_code"]  | "";
+    const char* teacher   = e["teacher_name"]  | "";
+    const char* dayName   = e["day_name"]      | "MON";
+
+    strncpy(currentTT.entries[i].startTime, startTime, 9);
+    strncpy(currentTT.entries[i].endTime,   endTime,   9);
+    strncpy(currentTT.entries[i].subject,   subject,   29);
+    strncpy(currentTT.entries[i].code,      codeText,  9);
+    strncpy(currentTT.entries[i].teacher,   teacher,   29);
+    strncpy(currentTT.entries[i].dayName,   dayName,   3);
+
+    String roomStr;
+    if (e["room_number"].is<const char*>()) roomStr = String((const char*)e["room_number"]);
+    else roomStr = String(e["room_number"].as<int>());
+    strncpy(currentTT.entries[i].room, roomStr.c_str(), 9);
+
+    currentTT.entries[i].startTime[9] = '\0';
+    currentTT.entries[i].endTime[9]   = '\0';
+    currentTT.entries[i].subject[29]  = '\0';
+    currentTT.entries[i].code[9]      = '\0';
+    currentTT.entries[i].teacher[29]  = '\0';
+    currentTT.entries[i].room[9]      = '\0';
+    currentTT.entries[i].dayName[3]   = '\0';
+    currentTT.entries[i].dayId = e["day_id"] | 1;
+    currentTT.count++;
+  }
+
+  if (!currentTT.isEvening && currentTT.count > 0) {
+    int firstHour = 0;
+    sscanf(currentTT.entries[0].startTime, "%d:", &firstHour);
+    if (firstHour >= 13) currentTT.isEvening = true;
+  }
+
+  Serial.print("Loaded into currentTT: "); Serial.println(currentTT.count);
 }
 
-// -----------------------------------------------------------------------
-// fetchOfficeTeachers — Ground Floor
-// -----------------------------------------------------------------------
 void fetchOfficeTeachers(const char* floor) {
   if (WiFi.status() != WL_CONNECTED) return;
-
-  for (int i = 0; i < OFFICE_ROOM_COUNT; i++)
-    strncpy(officeTeacher[i], "----", 31);
+  for (int i = 0; i < OFFICE_ROOM_COUNT; i++) strncpy(officeTeacher[i], "----", 31);
   officeTeacherLoaded = 0;
-
   HTTPClient http;
   String url = String("http://") + serverIP + ":3000/offices";
-  if (!http.begin(httpClient, url)) {
-    Serial.println("[OFFICES] http.begin() failed");
-    return;
-  }
-  http.setConnectTimeout(5000);
-  http.setTimeout(10000);
-
+  if (!http.begin(httpClient, url)) return;
+  http.setConnectTimeout(5000); http.setTimeout(10000);
   int code = http.GET();
-  if (code != 200) {
-    Serial.printf("[OFFICES] Bad response: %d\n", code);
-    http.end();
-    return;
-  }
-
+  if (code != 200) { http.end(); return; }
   String payload = http.getString();
   http.end();
-
   DynamicJsonDocument doc(8192);
-  DeserializationError err = deserializeJson(doc, payload);
-  if (err) {
-    Serial.printf("[OFFICES] JSON error: %s\n", err.c_str());
-    return;
-  }
-
+  if (deserializeJson(doc, payload)) return;
   for (JsonObject o : doc.as<JsonArray>()) {
     const char* floorStr = o["floor"]       | "";
     const char* roomStr  = o["room_number"] | "-1";
     const char* teacher  = o["teacher_name"]| "";
-
     int roomNum = atoi(roomStr);
-
     if (strcmp(floorStr, floor) != 0) continue;
     if (strlen(teacher) == 0) continue;
-
     int slot = -1;
+    // Room-to-slot mapping matches physical left-to-right floor plan layout
     switch (roomNum) {
-      case 1: slot = 4; break;
-      case 2: slot = 2; break;
-      case 3: slot = 0; break;
-      case 4: slot = 1; break;
-      case 5: slot = 3; break;
-      case 6: slot = 5; break;
-      default: break;
+      case 1: slot = 4; break; case 2: slot = 2; break; case 3: slot = 0; break;
+      case 4: slot = 1; break; case 5: slot = 3; break; case 6: slot = 5; break;
     }
-
-    if (slot >= 0) {
-      strncpy(officeTeacher[slot], teacher, 31);
-      officeTeacher[slot][31] = '\0';
-    }
+    if (slot >= 0) { strncpy(officeTeacher[slot], teacher, 31); officeTeacher[slot][31] = '\0'; }
   }
-
   officeTeacherLoaded = 1;
 }
 
-// -----------------------------------------------------------------------
-// fetchFirstFloorTeachers
-// -----------------------------------------------------------------------
 void fetchFirstFloorTeachers() {
   if (WiFi.status() != WL_CONNECTED) return;
-
-  ffTeacherCount = 0;
-  ffTeacherLoaded = 0;
-  for (int i = 0; i < FF_STANDALONE_COUNT; i++)
-    strncpy(ffStandaloneTeacher[i], "----", 31);
-  for (int i = 0; i < CABIN2_ROOM_COUNT; i++)
-    strncpy(cabin2Teacher[i], "----", 31);
-  for (int i = 0; i < CABIN3_ROOM_COUNT; i++)
-    strncpy(cabin3Teacher[i], "----", 31);
-
+  ffTeacherCount = 0; ffTeacherLoaded = 0;
+  for (int i = 0; i < FF_STANDALONE_COUNT; i++) strncpy(ffStandaloneTeacher[i], "----", 31);
+  for (int i = 0; i < CABIN2_ROOM_COUNT;   i++) strncpy(cabin2Teacher[i],        "----", 31);
+  for (int i = 0; i < CABIN3_ROOM_COUNT;   i++) strncpy(cabin3Teacher[i],        "----", 31);
   HTTPClient http;
   String url = String("http://") + serverIP + ":3000/offices";
   if (!http.begin(httpClient, url)) return;
-  http.setConnectTimeout(5000);
-  http.setTimeout(10000);
-
+  http.setConnectTimeout(5000); http.setTimeout(10000);
   int code = http.GET();
-  if (code != 200) {
-    Serial.printf("[FF] HTTP error: %d\n", code);
-    http.end();
-    return;
-  }
-
+  if (code != 200) { http.end(); return; }
   String payload = http.getString();
   http.end();
-
   DynamicJsonDocument doc(8192);
-  if (deserializeJson(doc, payload)) {
-    Serial.println("[FF] JSON parse failed");
-    return;
-  }
-
+  if (deserializeJson(doc, payload)) return;
   for (JsonObject o : doc.as<JsonArray>()) {
     const char* floorStr = o["floor"] | "";
     const char* roomStr  = o["room_number"] | "0";
     const char* teacher  = o["teacher_name"] | "";
-
     if (strcmp(floorStr, "1st Floor") != 0) continue;
     if (strlen(teacher) == 0) continue;
-
     int roomNum = atoi(roomStr);
-
     int cabinNum = 0;
-    if (roomNum >= 7 && roomNum <= 12) {
-      cabinNum = 2;
-    } else if (roomNum >= 16 && roomNum <= 18) {
-      cabinNum = 3;
-    } else if (roomNum == 13 || roomNum == 14 || roomNum == 15 || roomNum == 19 || roomNum == 20) {
-      cabinNum = 0;
-    } else {
-      continue;
-    }
-
+    if      (roomNum >= 7  && roomNum <= 12) cabinNum = 2;
+    else if (roomNum >= 16 && roomNum <= 18) cabinNum = 3;
+    else if (roomNum==13||roomNum==14||roomNum==15||roomNum==19||roomNum==20) cabinNum = 0;
+    else continue;
     if (ffTeacherCount < FF_MAX_TEACHERS) {
       strncpy(ffTeachers[ffTeacherCount].name, teacher, 31);
       ffTeachers[ffTeacherCount].name[31] = '\0';
-      ffTeachers[ffTeacherCount].roomNumber = roomNum;
+      ffTeachers[ffTeacherCount].roomNumber  = roomNum;
       ffTeachers[ffTeacherCount].cabinNumber = cabinNum;
       ffTeacherCount++;
     }
-
     if (cabinNum == 0) {
-      for (int i = 0; i < FF_STANDALONE_COUNT; i++) {
-        if (FF_STANDALONE_ROOMS[i] == roomNum) {
-          strncpy(ffStandaloneTeacher[i], teacher, 31);
-          ffStandaloneTeacher[i][31] = '\0';
-          break;
-        }
-      }
+      for (int i = 0; i < FF_STANDALONE_COUNT; i++)
+        if (FF_STANDALONE_ROOMS[i] == roomNum) { strncpy(ffStandaloneTeacher[i], teacher, 31); ffStandaloneTeacher[i][31]='\0'; break; }
     }
-
     if (cabinNum == 2) {
-      for (int s = 0; s < CABIN2_ROOM_COUNT; s++) {
-        if (CABIN2_SLOT_TO_ROOM[s] == roomNum) {
-          strncpy(cabin2Teacher[s], teacher, 31);
-          cabin2Teacher[s][31] = '\0';
-          break;
-        }
-      }
+      for (int s = 0; s < CABIN2_ROOM_COUNT; s++)
+        if (CABIN2_SLOT_TO_ROOM[s] == roomNum) { strncpy(cabin2Teacher[s], teacher, 31); cabin2Teacher[s][31]='\0'; break; }
     }
-
     if (cabinNum == 3) {
-      for (int s = 0; s < CABIN3_ROOM_COUNT; s++) {
-        if (CABIN3_SLOT_TO_ROOM[s] == roomNum) {
-          strncpy(cabin3Teacher[s], teacher, 31);
-          cabin3Teacher[s][31] = '\0';
-          break;
-        }
-      }
+      for (int s = 0; s < CABIN3_ROOM_COUNT; s++)
+        if (CABIN3_SLOT_TO_ROOM[s] == roomNum) { strncpy(cabin3Teacher[s], teacher, 31); cabin3Teacher[s][31]='\0'; break; }
     }
   }
-
   ffTeacherLoaded = 1;
-  Serial.printf("[FF] Loaded %d first floor teachers\n", ffTeacherCount);
 }
 
-// -----------------------------------------------------------------------
-// resolveFFTeacherHighlight
-// -----------------------------------------------------------------------
 void resolveFFTeacherHighlight(int teacherIdx) {
   if (teacherIdx < 0 || teacherIdx >= ffTeacherCount) return;
-
   int roomNum  = ffTeachers[teacherIdx].roomNumber;
   int cabinNum = ffTeachers[teacherIdx].cabinNumber;
-
   if (cabinNum == 2) {
     ffHighlightCabin = 2;
-    for (int s = 0; s < CABIN2_ROOM_COUNT; s++) {
-      if (CABIN2_SLOT_TO_ROOM[s] == roomNum) {
-        ffHighlightRoom = s;
-        selCabin2Slot   = s;
-        break;
-      }
-    }
+    for (int s = 0; s < CABIN2_ROOM_COUNT; s++)
+      if (CABIN2_SLOT_TO_ROOM[s] == roomNum) { ffHighlightRoom = s; selCabin2Slot = s; break; }
   } else if (cabinNum == 3) {
     ffHighlightCabin = 3;
-    for (int s = 0; s < CABIN3_ROOM_COUNT; s++) {
-      if (CABIN3_SLOT_TO_ROOM[s] == roomNum) {
-        ffHighlightRoom = s;
-        selCabin3Slot   = s;
-        break;
-      }
-    }
+    for (int s = 0; s < CABIN3_ROOM_COUNT; s++)
+      if (CABIN3_SLOT_TO_ROOM[s] == roomNum) { ffHighlightRoom = s; selCabin3Slot = s; break; }
   } else {
     ffHighlightCabin = 0;
-    for (int i = 0; i < FF_STANDALONE_COUNT; i++) {
-      if (FF_STANDALONE_ROOMS[i] == roomNum) {
-        ffHighlightRoom = i;
-        break;
-      }
-    }
+    for (int i = 0; i < FF_STANDALONE_COUNT; i++)
+      if (FF_STANDALONE_ROOMS[i] == roomNum) { ffHighlightRoom = i; break; }
   }
 }
 
@@ -976,76 +857,75 @@ void resolveFFTeacherHighlight(int teacherIdx) {
 // TIMETABLE DISPLAY
 // ========================================
 void drawTimetable() {
-  vga.clear(BLACK);
+  vga.clear(C_BLACK);
 
-  vga.fillRect(0, 0, 400, 46, DARK_BLUE);
-  drawBox(2, 2, 396, 42, CYAN);
+  vga.fillRect(0, 0, 400, 44, C_BLUE);
+  vga.fillRect(0, 0, 400, 3,  C_YELLOW);
+  vga.fillRect(0, 43, 400, 1, C_CYAN);
 
   char hdr[80];
-  sprintf(hdr, "%s | SEC: %s - TIMETABLE",
-          currentTT.semester,
-          sections[currentTT.sectionIdx].name);
+  sprintf(hdr, "SEC %s", sections[currentTT.sectionIdx].name);
+  vga.setTextColor(C_CYAN, C_BLUE);
+  vga.setCursor(8, 8); vga.print("TIMETABLE");
+
   int hdrX = (400 - (int)strlen(hdr) * 6) / 2;
-  if (hdrX < 5) hdrX = 5;
-  vga.setTextColor(YELLOW, DARK_BLUE);
-  vga.setCursor(hdrX, 18);
-  vga.print(hdr);
+  if (hdrX < 8) hdrX = 8;
+  vga.setTextColor(C_WHITE, C_BLUE);
+  vga.setCursor(hdrX, 24); vga.print(hdr);
 
   if (currentTT.count == 0) {
-    vga.fillRect(20, 60, 360, 200, GRAY);
-    drawBox(20, 60, 360, 200, LIGHT_BLUE);
-    vga.setTextColor(RED, GRAY);
-    vga.setCursor(80, 150);
-    vga.print("NO TIMETABLE DATA");
-    vga.fillRect(0, 285, 400, 15, DARK_BLUE);
-    drawBox(10, 285, 380, 14, CYAN);
-    leftText(12, 290, "[E:Menu]  [B:Back]", LIGHT_BLUE, DARK_BLUE);
+    vga.fillRect(40, 100, 320, 120, C_WHITE);
+    drawBox(40, 100, 320, 120, C_CYAN);
+    vga.fillRect(40, 100, 320, 3, C_YELLOW);
+    centerText(148, "NO TIMETABLE DATA",       C_BLACK, C_WHITE);
+    centerText(164, "Check server connection",  C_BLUE,  C_WHITE);
+    vga.fillRect(0, 286, 400, 14, C_BLUE);
+    vga.fillRect(0, 285, 400, 1,  C_CYAN);
+    leftText(8, 290, "[ENTER: Main Menu]  [BACK: Section]", C_CYAN, C_BLUE);
     return;
   }
 
   buildTimetableGrid();
 
-  const int DAY_COL_W = 34;
-  const int GRID_X    = 0;
-  const int HDR_Y     = 46;
-  const int HDR_H     = 21;
+  const int DAY_COL_W = 32;
+  const int HDR_Y     = 44;
+  const int HDR_H     = 18;
   const int ROW_Y     = HDR_Y + HDR_H;
-  const int ROW_H     = 44;
-  const int FOOTER_Y  = 287;
+  const int ROW_H     = 45;
+  const int FOOTER_Y  = 286;
+  const int GRID_X    = 0;
 
   int nSlots = ttGrid.slotCount;
   int cellW  = (400 - DAY_COL_W) / nSlots;
 
-  vga.fillRect(GRID_X, HDR_Y, DAY_COL_W, HDR_H, DARK_BLUE);
-  drawBox(GRID_X, HDR_Y, DAY_COL_W, HDR_H, CYAN);
-  vga.setTextColor(YELLOW, DARK_BLUE);
-  vga.setCursor(GRID_X + 4, HDR_Y + 7);
+  // Column headers
+  vga.fillRect(GRID_X, HDR_Y, DAY_COL_W, HDR_H, C_BLACK);
+  drawBox(GRID_X, HDR_Y, DAY_COL_W, HDR_H, C_CYAN);
+  vga.setTextColor(C_CYAN, C_BLACK);
+  vga.setCursor(GRID_X + 4, HDR_Y + 5);
   vga.print("DAY");
 
   for (int s = 0; s < nSlots; s++) {
     int x = GRID_X + DAY_COL_W + s * cellW;
     int w = (s == nSlots - 1) ? (400 - x) : cellW;
-    vga.fillRect(x, HDR_Y, w, HDR_H, DARK_BLUE);
-    drawBox(x, HDR_Y, w, HDR_H, CYAN);
+    vga.fillRect(x, HDR_Y, w, HDR_H, C_BLACK);
+    drawBox(x, HDR_Y, w, HDR_H, C_CYAN);
     char label[8];
     sprintf(label, "%d:00", ttGrid.slotStart + s);
     int lx = x + (w - (int)strlen(label) * 6) / 2;
-    vga.setTextColor(CYAN, DARK_BLUE);
-    vga.setCursor(lx, HDR_Y + 7);
+    vga.setTextColor(C_CYAN, C_BLACK);
+    vga.setCursor(lx, HDR_Y + 5);
     vga.print(label);
   }
 
-  int FREE_BG     = vga.RGB(0,  90, 0);
-  int FREE_BORDER = vga.RGB(0, 140, 0);
-  int FREE_TEXT   = vga.RGB(0, 200, 0);
-
+  // Grid rows
   for (int d = 0; d < MAX_DAYS; d++) {
     int y = ROW_Y + d * ROW_H;
 
-    vga.fillRect(GRID_X, y, DAY_COL_W, ROW_H, DARK_BLUE);
-    drawBox(GRID_X, y, DAY_COL_W, ROW_H, CYAN);
-    vga.setTextColor(YELLOW, DARK_BLUE);
-    vga.setCursor(GRID_X + 4, y + ROW_H / 2 - 4);
+    vga.fillRect(GRID_X, y, DAY_COL_W, ROW_H, C_BLACK);
+    drawBox(GRID_X, y, DAY_COL_W, ROW_H, C_CYAN);
+    vga.setTextColor(C_CYAN, C_BLACK);
+    vga.setCursor(GRID_X + 3, y + ROW_H / 2 - 4);
     vga.print(DAY_NAMES[d]);
 
     int s = 0;
@@ -1061,11 +941,10 @@ void drawTimetable() {
       if (s + actualSpan == nSlots) fillW = 400 - x;
 
       if (span == 0) {
-        vga.fillRect(x, y, fillW, ROW_H, FREE_BG);
-        drawBox(x, y, fillW, ROW_H, FREE_BORDER);
-        int cx = x + fillW / 2 - 3;
-        vga.setTextColor(FREE_TEXT, FREE_BG);
-        vga.setCursor(cx, y + ROW_H / 2 - 4);
+        vga.fillRect(x, y, fillW, ROW_H, C_BLACK);
+        drawBox(x, y, fillW, ROW_H, C_CYAN);
+        vga.setTextColor(C_CYAN, C_BLACK);
+        vga.setCursor(x + fillW / 2 - 3, y + ROW_H / 2 - 4);
         vga.print("-");
         s++;
       } else {
@@ -1074,24 +953,20 @@ void drawTimetable() {
         SubjectColor sc  = getSubjectColor(code);
 
         vga.fillRect(x, y, fillW, ROW_H, sc.bg);
-        drawBox(x, y, fillW, ROW_H, LIGHT_BLUE);
+        vga.fillRect(x, y, 3, ROW_H, sc.bg);
+        drawBox(x, y, fillW, ROW_H, C_BLACK);
 
-        int maxChars = (fillW - 6) / 6;
+        int maxChars = (fillW - 10) / 6;
         if (maxChars < 1) maxChars = 1;
+        char codeLine[16] = {0}; strncpy(codeLine, code, min(maxChars, 15));
+        char roomLine[16] = {0}; strncpy(roomLine, room, min(maxChars, 15));
 
-        char codeLine[16] = {0};
-        strncpy(codeLine, code, min(maxChars, 15));
-        char roomLine[16] = {0};
-        strncpy(roomLine, room, min(maxChars, 15));
-
-        int codeLx = x + (fillW - (int)strlen(codeLine) * 6) / 2;
-        int roomLx = x + (fillW - (int)strlen(roomLine) * 6) / 2;
+        int codeLx = x + 5 + (fillW - 5 - (int)strlen(codeLine) * 6) / 2;
+        int roomLx = x + 5 + (fillW - 5 - (int)strlen(roomLine) * 6) / 2;
 
         vga.setTextColor(sc.text, sc.bg);
         vga.setCursor(codeLx, y + ROW_H / 2 - 10);
         vga.print(codeLine);
-
-        vga.setTextColor(vga.RGB(190, 190, 190), sc.bg);
         vga.setCursor(roomLx, y + ROW_H / 2 + 2);
         vga.print(roomLine);
 
@@ -1100,88 +975,89 @@ void drawTimetable() {
     }
   }
 
-  vga.fillRect(0, FOOTER_Y, 400, 300 - FOOTER_Y, DARK_BLUE);
-  drawBox(2, FOOTER_Y, 396, 300 - FOOTER_Y, CYAN);
-  leftText(8, FOOTER_Y + 4, "[E:Main Menu]  [B:Back to Section]", LIGHT_BLUE, DARK_BLUE);
+  vga.fillRect(0, FOOTER_Y, 400, 300 - FOOTER_Y, C_BLUE);
+  vga.fillRect(0, FOOTER_Y - 1, 400, 1, C_CYAN);
+  leftText(8, FOOTER_Y + 4, "[ENTER:Menu]  [BACK:Section]", C_CYAN, C_BLUE);
 }
 
 // ========================================
-// MAIN MENU
+// MENU
 // ========================================
 void drawMenu() {
-  drawBase("");
+  vga.clear(C_BLACK);
+  drawHeader();
+  drawFooter("UP/DOWN: Navigate   ENTER: Select");
 
-  const char* items[5] = { "URGENT NOTICES", "GENERAL NOTICES", "EVENT NOTICES", "TEACHER OFFICES", "TIME TABLE" };
-  int colors[5] = {
-    vga.RGB(255, 60,  60),
-    vga.RGB(0,   220, 100),
-    vga.RGB(255, 200, 0),
-    NEON_BLUE,
-    NEON_PINK
+  struct MenuItem {
+    const char* label;
+    int         accentColor;
+    int         iconBg;
+    Category*   cat;
   };
-  Category* cats[4] = { &urgent, &general, &eventCat, &office };
 
-  for (int gx = 10; gx < 400; gx += 18) {
-    for (int gy = 58; gy < 283; gy += 18) {
-      vga.fillRect(gx, gy, 1, 1, vga.RGB(0, 25, 35));
-    }
-  }
+  MenuItem items[5] = {
+    { "URGENT NOTICES",  C_RED,     C_WHITE, &urgent   },
+    { "GENERAL NOTICES", C_GREEN,    C_WHITE, &general  },
+    { "EVENT NOTICES",   C_YELLOW,  C_WHITE, &eventCat },
+    { "TEACHER OFFICES", C_BLUE,   C_WHITE, nullptr   },
+    { "TIME TABLE",      C_MAGENTA, C_WHITE, nullptr   },
+  };
 
-  updatePulse();
+  const int CARD_X = 20;
+  const int CARD_W = 360;
+  const int CARD_H = 38;
+  const int FIRST_Y = 62;
+  const int GAP     = 4;
 
   for (int i = 0; i < 5; i++) {
-    int y   = 60 + i * 44;
+    int y   = FIRST_Y + i * (CARD_H + GAP);
     bool sel = (i == selectedMenu);
 
-    if (sel) {
-      drawBox(20, y,     360, 40, vga.RGB(colors[i] >> 2 & 0x3F, 0, 0));
-      drawBox(22, y + 1, 356, 38, colors[i]);
-      vga.fillRect(24, y + 2, 352, 36, vga.RGB(12, 18, 30));
-      vga.fillRect(24, y + 2, 4, 36, colors[i]);
-      
-      // Center the text
-      int textLen = strlen(items[i]);
-      int textX = 38 + (352 - textLen * 6) / 2;
-      drawGlowText(textX, y + 14, items[i], colors[i], vga.RGB(12, 18, 30));
-      
-      vga.setTextColor(colors[i], vga.RGB(12, 18, 30));
-      vga.setCursor(348, y + 14); vga.print(">");
-    } else {
-      vga.fillRect(24, y + 2, 352, 36, vga.RGB(18, 20, 32));
-      drawBox(24, y + 2, 352, 36, vga.RGB(35, 40, 60));
-      vga.fillRect(24, y + 2, 2, 36, vga.RGB(40, 50, 80));
-      
-      // Center the text
-      int textLen = strlen(items[i]);
-      int textX = (400 - textLen * 6) / 2;
-      vga.setTextColor(vga.RGB(150, 160, 200), vga.RGB(18, 20, 32));
-      vga.setCursor(textX, y + 14);
-      vga.print(items[i]);
-    }
+    int cardBg = sel ? C_BLUE : C_WHITE;
+    vga.fillRect(CARD_X, y, CARD_W, CARD_H, cardBg);
+    drawBox(CARD_X, y, CARD_W, CARD_H, sel ? C_WHITE : C_CYAN);
 
-    if (i < 4) {
-      char cnt[8];
-      sprintf(cnt, "%d", cats[i]->count);
-      int badgeW = strlen(cnt) * 6 + 10;
-      int badgeX = 316 - badgeW;
+    // Left accent stripe
+    vga.fillRect(CARD_X, y, 3, CARD_H, items[i].accentColor);
 
-      if (sel) {
-        vga.fillRect(badgeX, y + 12, badgeW, 14, colors[i]);
-        vga.setTextColor(BLACK, colors[i]);
-      } else {
-        vga.fillRect(badgeX, y + 12, badgeW, 14, vga.RGB(35, 40, 60));
-        vga.setTextColor(vga.RGB(120, 130, 160), vga.RGB(35, 40, 60));
-      }
-      vga.setCursor(badgeX + 5, y + 15);
+    // Icon badge
+    int iconBg = sel ? C_WHITE : items[i].iconBg;
+    vga.fillRect(CARD_X + 8, y + 10, 16, 16, iconBg);
+    drawBox(CARD_X + 8, y + 10, 16, 16, items[i].accentColor);
+    char initBuf[2] = { items[i].label[0], '\0' };
+    vga.setTextColor(items[i].accentColor, iconBg);
+    vga.setCursor(CARD_X + 11, y + 14);
+    vga.print(initBuf);
+
+    // Label
+    vga.setTextColor(sel ? C_WHITE : C_BLACK, cardBg);
+    vga.setCursor(CARD_X + 30, y + 14);
+    vga.print(items[i].label);
+
+    // Count badge
+    if (items[i].cat != nullptr) {
+      char cnt[8]; sprintf(cnt, "(%d)", items[i].cat->count);
+      int cntX = CARD_X + CARD_W - strlen(cnt)*6 - (items[i].cat->count > 0 ? 44 : 10);
+      vga.setTextColor(sel ? C_CYAN : C_BLUE, cardBg);
+      vga.setCursor(cntX, y + 14);
       vga.print(cnt);
 
       bool hasNew = false;
-      for (int j = 0; j < cats[i]->count; j++) {
-        if (cats[i]->items[j].isNew) { hasNew = true; break; }
-      }
+      for (int j = 0; j < items[i].cat->count; j++)
+        if (items[i].cat->items[j].isNew) { hasNew = true; break; }
       if (hasNew) {
-        drawPulseBadge(sel ? 330 : 333, y + 20);
+        int badgeX = CARD_X + CARD_W - 42;
+        vga.fillRect(badgeX, y + 11, 30, 14, C_RED);
+        vga.setTextColor(C_WHITE, C_RED);
+        vga.setCursor(badgeX + 5, y + 14);
+        vga.print("NEW");
       }
+    }
+
+    if (sel) {
+      vga.setTextColor(C_WHITE, cardBg);
+      vga.setCursor(CARD_X + CARD_W - 12, y + 14);
+      vga.print(">");
     }
   }
 
@@ -1189,510 +1065,538 @@ void drawMenu() {
 }
 
 // ========================================
-// ANNOUNCEMENT / NOTICE VIEW
+// ANNOUNCEMENT VIEWER
 // ========================================
 void showCategory(Category &cat, const char* title) {
-  drawBase("U/D:Navigate  B:Back");
+  vga.clear(C_BLACK);
+  drawHeader();
+  drawFooter("UP/DOWN: Browse   BACK: Menu");
 
   if (cat.count == 0) {
-    vga.fillRect(40, 100, 320, 80, vga.RGB(18, 20, 32));
-    drawBox(40, 100, 320, 80, vga.RGB(40, 50, 80));
-    centerText(130, "NO ANNOUNCEMENTS", NEON_BLUE, vga.RGB(18, 20, 32));
-    centerText(148, "in this category", vga.RGB(80, 90, 120), vga.RGB(18, 20, 32));
+    vga.fillRect(60, 100, 280, 100, C_WHITE);
+    drawBox(60, 100, 280, 100, C_CYAN);
+    vga.fillRect(60, 100, 280, 3, C_BLUE);
+    centerText(138, "NO ANNOUNCEMENTS",         C_BLACK, C_WHITE);
+    centerText(156, "Nothing in this category", C_BLUE,  C_WHITE);
     return;
   }
 
   if (cat.index >= cat.count) cat.index = 0;
   if (cat.index < 0)          cat.index = cat.count - 1;
 
-  vga.fillRect(15, 56, 370, 42, vga.RGB(10, 14, 28));
-  drawBox(15, 56, 370, 42, NEON_BLUE);
-  vga.fillRect(17, 58, 4, 38, NEON_PINK);
-  drawGlowText(28, 62, title, NEON_PINK, vga.RGB(10, 14, 28));
-  vga.setTextColor(vga.RGB(180, 190, 220), vga.RGB(10, 14, 28));
-  vga.setCursor(28, 80);
-  vga.print(cat.items[cat.index].title);
+  // Category bar
+  vga.fillRect(10, 50, 380, 22, C_BLUE);
+  drawBox(10, 50, 380, 22, C_CYAN);
+  vga.fillRect(10, 50, 3, 22, C_YELLOW);
+  vga.setTextColor(C_WHITE, C_BLUE);
+  vga.setCursor(18, 56);
+  vga.print(title);
 
-  vga.fillRect(15, 104, 370, 158, vga.RGB(16, 18, 30));
-  drawBox(15, 104, 370, 158, vga.RGB(40, 50, 80));
+  char idxBuf[20]; sprintf(idxBuf, "%d / %d", cat.index + 1, cat.count);
+  int idxX = 390 - strlen(idxBuf) * 6 - 4;
+  vga.setTextColor(C_WHITE, C_BLUE);
+  vga.setCursor(idxX, 58);
+  vga.print(idxBuf);
 
-  vga.setTextColor(vga.RGB(200, 210, 230), vga.RGB(16, 18, 30));
+  // Title card
+  vga.fillRect(10, 76, 380, 30, C_WHITE);
+  drawBox(10, 76, 380, 30, C_CYAN);
+  vga.fillRect(10, 76, 3, 30, C_BLUE);
+  vga.setTextColor(C_BLACK, C_WHITE);
+  char titleLine[60] = {0};
+  strncpy(titleLine, cat.items[cat.index].title, 58);
+  vga.setCursor(18, 86);
+  vga.print(titleLine);
+
+  // Message card
+  vga.fillRect(10, 110, 380, 162, C_WHITE);
+  drawBox(10, 110, 380, 162, C_CYAN);
+  vga.fillRect(10, 110, 3, 162, C_CYAN);
+
+  vga.setTextColor(C_BLUE, C_WHITE);
+  vga.setCursor(18, 118);
+  vga.print("MESSAGE");
+  vga.fillRect(18, 127, 50, 1, C_BLUE);
+
+  // Word-wrapped message rendering
+  vga.setTextColor(C_BLACK, C_WHITE);
   const char* msg = cat.items[cat.index].message;
-  int lineY = 114, pos = 0, len = strlen(msg);
-  
-  // Center each line of the message
-  while (pos < len && lineY < 254) {
-    char line[53] = {0};
-    int charsToCopy = min(52, len - pos);
-    strncpy(line, msg + pos, charsToCopy);
-    line[charsToCopy] = '\0';
-    
-    // Center the line
-    int lineLen = strlen(line);
-    int lineX = (400 - lineLen * 6) / 2;
-    if (lineX < 22) lineX = 22;
-    
-    vga.setCursor(lineX, lineY);
+
+  const int TEXT_START_X = 18;
+  const int TEXT_END_X   = 388;
+  const int CHAR_W       = 6;
+  const int MAX_CHARS    = (TEXT_END_X - TEXT_START_X) / CHAR_W;  // 61
+
+  int lineY = 133;
+  int pos   = 0;
+  int len   = strlen(msg);
+
+  while (pos < len && lineY < 266) {
+    int remaining = len - pos;
+    int take      = (remaining > MAX_CHARS) ? MAX_CHARS : remaining;
+
+    // Walk back to last space to avoid cutting mid-word
+    if (pos + take < len) {
+      int breakAt = take;
+      while (breakAt > 0 && msg[pos + breakAt] != ' ') breakAt--;
+      if (breakAt > 0) take = breakAt;
+    }
+
+    char line[64] = {0};
+    strncpy(line, msg + pos, take);
+    vga.setCursor(TEXT_START_X, lineY);
     vga.print(line);
-    pos += 52;
-    lineY += 16;
+
+    pos += take;
+    if (pos < len && msg[pos] == ' ') pos++;  // skip the space we broke on
+
+    lineY += 14;
   }
 
-  char nav[40];
-  sprintf(nav, "Notice %d of %d", cat.index + 1, cat.count);
-  centerText(268, nav, NEON_CYAN, BLACK);
-
+  markNotifiedUser(cat.items[cat.index].id);
   cat.items[cat.index].isNew = false;
   updateLEDs();
 }
 
 // ========================================
-// TIMETABLE SELECTION SCREENS
+// GENERIC SELECTION LIST
 // ========================================
-void drawYearSelect() {
-  drawBase("U/D:Navigate  E:Select  B:Back");
+void drawSelectList(const char* pageTitle, const char* subTitle,
+                    int selIdx, int scrollOff, int total,
+                    int accentColor,
+                    const char* (*getName)(int)) {
+  vga.clear(C_BLACK);
+  drawHeader();
+  drawFooter("UP/DOWN: Navigate   ENTER: Select   BACK: Go Back");
 
-  vga.fillRect(15, 55, 370, 18, vga.RGB(10, 14, 28));
-  drawBox(15, 55, 370, 18, NEON_BLUE);
-  drawGlowText(80, 60, "SELECT YEAR / BATCH", YELLOW, vga.RGB(10, 14, 28));
+  vga.fillRect(10, 50, 380, 20, C_WHITE);
+  drawBox(10, 50, 380, 20, C_CYAN);
+  vga.fillRect(10, 50, 3, 20, accentColor);
 
-  if (totalYears == 0) {
-    centerText(160, "No years found!", NEON_BLUE, BLACK);
+  vga.setTextColor(C_BLUE, C_WHITE);
+  vga.setCursor(18, 55);
+  vga.print(pageTitle);
+  if (subTitle && strlen(subTitle) > 0) {
+    vga.setTextColor(C_BLACK, C_WHITE);
+    int subX = 390 - strlen(subTitle)*6 - 8;
+    vga.setCursor(subX, 55);
+    vga.print(subTitle);
+  }
+
+  if (total == 0) {
+    vga.fillRect(40, 100, 320, 60, C_WHITE);
+    drawBox(40, 100, 320, 60, C_CYAN);
+    centerText(124, "No items found", C_BLUE, C_WHITE);
     return;
   }
 
   const int VISIBLE = 5;
-  int end = min(yearScrollOff + VISIBLE, totalYears);
+  const int ITEM_H  = 37;
+  const int ITEM_X  = 20;
+  const int ITEM_W  = 360;
+  const int FIRST_Y = 76;
 
-  for (int i = yearScrollOff; i < end; i++) {
-    int y   = 80 + (i - yearScrollOff) * 38;
-    bool sel = (i == selYear);
+  if (scrollOff > 0)
+    centerText(71, "^ more above", C_CYAN, C_BLACK);
+
+  int end = min(scrollOff + VISIBLE, total);
+  for (int i = scrollOff; i < end; i++) {
+    int  y   = FIRST_Y + (i - scrollOff) * (ITEM_H + 3);
+    bool sel = (i == selIdx);
+
+    int bgColor = sel ? C_BLUE : C_WHITE;
+    vga.fillRect(ITEM_X, y, ITEM_W, ITEM_H, bgColor);
+    drawBox(ITEM_X, y, ITEM_W, ITEM_H, sel ? C_WHITE : C_CYAN);
+    vga.fillRect(ITEM_X, y, 3, ITEM_H, accentColor);
+
+    const char* name = getName(i);
+    int nameLen = strlen(name);
+    int nameX   = ITEM_X + 12 + (ITEM_W - 14 - nameLen*6) / 2;
+    if (nameX < ITEM_X + 12) nameX = ITEM_X + 12;
+    vga.setTextColor(sel ? C_WHITE : C_BLACK, bgColor);
+    vga.setCursor(nameX, y + 13);
+    vga.print(name);
 
     if (sel) {
-      vga.fillRect(50, y, 300, 33, vga.RGB(10, 14, 28));
-      drawBox(50, y, 300, 33, YELLOW);
-      vga.fillRect(50, y, 4, 33, YELLOW);
-      drawGlowText(64, y + 12, years[i].name, YELLOW, vga.RGB(10, 14, 28));
-    } else {
-      vga.fillRect(50, y, 300, 33, vga.RGB(18, 20, 32));
-      drawBox(50, y, 300, 33, vga.RGB(40, 50, 70));
-      centerText(y + 12, years[i].name, vga.RGB(160, 170, 200), vga.RGB(18, 20, 32));
+      vga.setTextColor(C_WHITE, bgColor);
+      vga.setCursor(ITEM_X + ITEM_W - 14, y + 13);
+      vga.print(">");
     }
   }
 
-  if (yearScrollOff > 0)
-    centerText(74, "^ scroll up", NEON_CYAN, BLACK);
-  if (yearScrollOff + VISIBLE < totalYears)
-    centerText(276, "v scroll down", NEON_CYAN, BLACK);
+  if (scrollOff + VISIBLE < total)
+    centerText(276, "v more below", C_CYAN, C_BLACK);
+}
+
+const char* getYearName(int i)    { return years[i].name; }
+const char* getSessionName(int i) { return sessions[i].name; }
+const char* getSectionName(int i) { return sections[i].name; }
+
+void drawYearSelect() {
+  char sub[30]; sprintf(sub, "%d total", totalYears);
+  drawSelectList("SELECT YEAR / BATCH", sub, selYear, yearScrollOff, totalYears, C_BLUE, getYearName);
 }
 
 void drawSessionSelect() {
-  drawBase("U/D:Navigate  E:Select  B:Back");
-
-  vga.fillRect(15, 55, 370, 18, vga.RGB(10, 14, 28));
-  drawBox(15, 55, 370, 18, NEON_BLUE);
-  char header[60];
-  sprintf(header, "%s - SELECT SESSION", years[selYear].name);
-  drawGlowText(30, 60, header, YELLOW, vga.RGB(10, 14, 28));
-
-  if (totalSessions == 0) {
-    centerText(160, "No sessions found!", NEON_BLUE, BLACK);
-    return;
-  }
-
-  const int VISIBLE = 5;
-  int end = min(sessionScrollOff + VISIBLE, totalSessions);
-
-  for (int i = sessionScrollOff; i < end; i++) {
-    int y   = 80 + (i - sessionScrollOff) * 38;
-    bool sel = (i == selSession);
-
-    if (sel) {
-      vga.fillRect(30, y, 340, 33, vga.RGB(10, 14, 28));
-      drawBox(30, y, 340, 33, YELLOW);
-      vga.fillRect(30, y, 4, 33, YELLOW);
-      drawGlowText(42, y + 12, sessions[i].name, YELLOW, vga.RGB(10, 14, 28));
-    } else {
-      vga.fillRect(30, y, 340, 33, vga.RGB(18, 20, 32));
-      drawBox(30, y, 340, 33, vga.RGB(40, 50, 70));
-      vga.setTextColor(vga.RGB(160, 170, 200), vga.RGB(18, 20, 32));
-      vga.setCursor(42, y + 12);
-      vga.print(sessions[i].name);
-    }
-  }
-
-  if (sessionScrollOff > 0)
-    centerText(74, "^ scroll up", NEON_CYAN, BLACK);
-  if (sessionScrollOff + VISIBLE < totalSessions)
-    centerText(276, "v scroll down", NEON_CYAN, BLACK);
+  char hdr[30]; sprintf(hdr, "%s", years[selYear].name);
+  drawSelectList("SELECT SESSION", hdr, selSession, sessionScrollOff, totalSessions, C_GREEN, getSessionName);
 }
 
 void drawSectionSelect() {
-  drawBase("U/D:Navigate  E:Select  B:Back");
-
-  vga.fillRect(15, 55, 370, 18, vga.RGB(10, 14, 28));
-  drawBox(15, 55, 370, 18, NEON_BLUE);
-  char title[60];
-  sprintf(title, "%s - SELECT SECTION", sessions[selSession].name);
-  drawGlowText(18, 60, title, YELLOW, vga.RGB(10, 14, 28));
-
-  if (totalSections == 0) {
-    centerText(160, "No sections found!", NEON_BLUE, BLACK);
-    return;
-  }
-
-  const int VISIBLE = 5;
-  int end = min(sectionScrollOff + VISIBLE, totalSections);
-
-  for (int i = sectionScrollOff; i < end; i++) {
-    int y   = 80 + (i - sectionScrollOff) * 38;
-    bool sel = (i == selSection);
-
-    if (sel) {
-      vga.fillRect(100, y, 200, 33, vga.RGB(10, 20, 14));
-      drawBox(100, y, 200, 33, GREEN);
-      vga.fillRect(100, y, 4, 33, GREEN);
-      drawGlowText(114, y + 12, sections[i].name, GREEN, vga.RGB(10, 20, 14));
-    } else {
-      vga.fillRect(100, y, 200, 33, vga.RGB(18, 20, 32));
-      drawBox(100, y, 200, 33, vga.RGB(40, 50, 70));
-      centerText(y + 12, sections[i].name, vga.RGB(160, 170, 200), vga.RGB(18, 20, 32));
-    }
-  }
-
-  if (sectionScrollOff > 0)
-    centerText(74, "^ scroll up", NEON_CYAN, BLACK);
-  if (sectionScrollOff + VISIBLE < totalSections)
-    centerText(276, "v scroll down", NEON_CYAN, BLACK);
+  char hdr[40]; sprintf(hdr, "%s", sessions[selSession].name);
+  drawSelectList("SELECT SECTION", hdr, selSection, sectionScrollOff, totalSections, C_YELLOW, getSectionName);
 }
 
 // ========================================
-// OFFICE FLOOR SELECTION
+// FLOOR SELECT
 // ========================================
 void drawOfficeFloorSelect() {
-  drawBase("U/D:Navigate  E:Select  B:Menu");
+  vga.clear(C_BLACK);
+  drawHeader();
+  drawFooter("UP/DOWN: Navigate   ENTER: Select   BACK: Menu");
 
-  vga.fillRect(15, 55, 370, 18, vga.RGB(10, 14, 28));
-  drawBox(15, 55, 370, 18, NEON_BLUE);
-  drawGlowText(130, 60, "SELECT FLOOR", YELLOW, vga.RGB(10, 14, 28));
+  vga.fillRect(10, 50, 380, 20, C_WHITE);
+  drawBox(10, 50, 380, 20, C_CYAN);
+  vga.fillRect(10, 50, 3, 20, C_GREEN);
+  vga.setTextColor(C_BLUE, C_WHITE);
+  vga.setCursor(18, 55);
+  vga.print("TEACHER OFFICES -- SELECT FLOOR");
 
+  int accents[2] = { C_BLUE, C_GREEN };
   for (int i = 0; i < OFFICE_FLOOR_COUNT; i++) {
-    int  y   = 100 + i * 50;
+    int  y   = 82 + i * 50;
     bool sel = (i == selOfficeFloor);
-
+    int  bg  = sel ? C_BLUE : C_WHITE;
+    vga.fillRect(30, y, 340, 42, bg);
+    drawBox(30, y, 340, 42, sel ? C_WHITE : C_CYAN);
+    vga.fillRect(30, y, 3, 42, accents[i]);
+    centerText(y + 15, OFFICE_FLOORS[i], sel ? C_WHITE : C_BLACK, bg);
     if (sel) {
-      vga.fillRect(50, y, 300, 38, vga.RGB(10, 14, 28));
-      drawBox(50, y, 300, 38, YELLOW);
-      vga.fillRect(50, y, 4, 38, YELLOW);
-      drawGlowText(68, y + 14, OFFICE_FLOORS[i], YELLOW, vga.RGB(10, 14, 28));
-    } else {
-      vga.fillRect(50, y, 300, 38, vga.RGB(18, 20, 32));
-      drawBox(50, y, 300, 38, vga.RGB(40, 50, 70));
-      centerText(y + 14, OFFICE_FLOORS[i], vga.RGB(160, 170, 200), vga.RGB(18, 20, 32));
+      vga.setTextColor(C_WHITE, bg);
+      vga.setCursor(360, y + 15);
+      vga.print(">");
     }
   }
 }
 
 // ========================================
-// OFFICE TEACHER SELECT (GROUND FLOOR)
+// GROUND FLOOR: TEACHER LIST
 // ========================================
 void drawOfficeTeacherSelect() {
-  drawBase("U/D:Navigate  E:View Map  B:Back");
+  vga.clear(C_BLACK);
+  drawHeader();
+  drawFooter("UP/DOWN: Navigate   ENTER: View Map   BACK: Floors");
 
-  vga.fillRect(15, 55, 370, 18, vga.RGB(10, 14, 28));
-  drawBox(15, 55, 370, 18, NEON_BLUE);
-  char header[50];
-  sprintf(header, "%s - SELECT TEACHER", OFFICE_FLOORS[selOfficeFloor]);
-  drawGlowText(30, 60, header, YELLOW, vga.RGB(10, 14, 28));
+  vga.fillRect(10, 50, 380, 20, C_WHITE);
+  drawBox(10, 50, 380, 20, C_CYAN);
+  vga.fillRect(10, 50, 3, 20, C_BLUE);
+  vga.setTextColor(C_BLUE, C_WHITE);
+  vga.setCursor(18, 55);
+  vga.print("GROUND FLOOR -- OFFICE TEACHERS");
 
   if (!officeTeacherLoaded) {
-    centerText(160, "Loading...", NEON_CYAN, BLACK);
+    vga.fillRect(40, 100, 320, 60, C_WHITE);
+    drawBox(40, 100, 320, 60, C_CYAN);
+    centerText(124, "Loading...", C_BLUE, C_WHITE);
     return;
   }
 
   const int VISIBLE = 5;
+  const int ITEM_H  = 36;
+  const int ITEM_X  = 15;
+  const int ITEM_W  = 370;
   int end = min(officeTeacherScroll + VISIBLE, OFFICE_ROOM_COUNT);
 
+  if (officeTeacherScroll > 0) centerText(73, "^ more above", C_CYAN, C_BLACK);
+
   for (int i = officeTeacherScroll; i < end; i++) {
-    int  y   = 78 + (i - officeTeacherScroll) * 40;
+    int  y   = 76 + (i - officeTeacherScroll) * (ITEM_H + 3);
     bool sel = (i == selOfficeTeacher);
+    int  bg  = sel ? C_BLUE : C_WHITE;
+    vga.fillRect(ITEM_X, y, ITEM_W, ITEM_H, bg);
+    drawBox(ITEM_X, y, ITEM_W, ITEM_H, sel ? C_WHITE : C_CYAN);
+    vga.fillRect(ITEM_X, y, 3, ITEM_H, C_BLUE);
+
+    char roomLabel[10]; sprintf(roomLabel, "R%d", i + 1);
+    vga.setTextColor(sel ? C_CYAN : C_BLUE, bg);
+    vga.setCursor(ITEM_X + 8, y + 13);
+    vga.print(roomLabel);
+
+    vga.setTextColor(sel ? C_WHITE : C_BLACK, bg);
+    int nameLen = strlen(officeTeacher[i]);
+    int nameX   = ITEM_X + 30 + (ITEM_W - 30 - nameLen*6) / 2;
+    if (nameX < ITEM_X + 30) nameX = ITEM_X + 30;
+    vga.setCursor(nameX, y + 13);
+    vga.print(officeTeacher[i]);
 
     if (sel) {
-      vga.fillRect(15, y, 370, 34, vga.RGB(10, 14, 28));
-      drawBox(15, y, 370, 34, NEON_CYAN);
-      vga.fillRect(15, y, 4, 34, NEON_CYAN);
-      drawGlowText(28, y + 12, officeTeacher[i], YELLOW, vga.RGB(10, 14, 28));
-      vga.setTextColor(NEON_CYAN, vga.RGB(10, 14, 28));
-      vga.setCursor(358, y + 12); vga.print(">");
-    } else {
-      vga.fillRect(15, y, 370, 34, vga.RGB(18, 20, 32));
-      drawBox(15, y, 370, 34, vga.RGB(40, 50, 70));
-      int nameLen = strlen(officeTeacher[i]);
-      int nameX   = (400 - nameLen * 6) / 2;
-      if (nameX < 28) nameX = 28;
-      vga.setTextColor(vga.RGB(160, 170, 200), vga.RGB(18, 20, 32));
-      vga.setCursor(nameX, y + 12);
-      vga.print(officeTeacher[i]);
+      vga.setTextColor(C_WHITE, bg);
+      vga.setCursor(ITEM_X + ITEM_W - 14, y + 13);
+      vga.print(">");
     }
   }
 
-  if (officeTeacherScroll > 0)
-    centerText(71, "^ scroll up", NEON_CYAN, BLACK);
   if (officeTeacherScroll + VISIBLE < OFFICE_ROOM_COUNT)
-    centerText(278, "v scroll down", NEON_CYAN, BLACK);
+    centerText(278, "v more below", C_CYAN, C_BLACK);
 }
 
 // ========================================
-// GROUND FLOOR MAP
+// GROUND FLOOR: MAP
 // ========================================
 void drawOfficeMap() {
-  vga.clear(BLACK);
-
+  vga.clear(C_BLACK);
+  vga.fillRect(0, 0, 400, 30, C_BLUE);
+  vga.fillRect(0, 0, 400, 3, C_YELLOW);
+  vga.fillRect(0, 29, 400, 1, C_CYAN);
+  vga.setTextColor(C_CYAN, C_BLUE);
+  vga.setCursor(8, 8);
+  vga.print("GROUND FLOOR");
+  centerText(14, "TEACHER OFFICE PLAN", C_WHITE, C_BLUE);
   const int pairLeft[3]  = { 0, 2, 4 };
   const int pairRight[3] = { 1, 3, 5 };
-
-  vga.fillRect(0, 0, 400, 18, DARK_BLUE);
-  drawBox(0, 0, 400, 18, CYAN);
-  centerText(5, "GROUND FLOOR - TEACHER OFFICES", YELLOW, DARK_BLUE);
-
-  const int BOX_W      = 185;
-  const int BOX_H      = 82;
-  const int LEFT_X     = 5;
-  const int RIGHT_X    = 210;
-  const int FIRST_Y    = 22;
-  const int ROW_STRIDE = 86;
-
-  const char* personArt[5] = {
-    "     ____         ",
-    "     |    |        ",
-    "    |____| O     ",
-    "      |  /||\\   ",
-    "     (  ) _/     "
-  };
-
+  const int BOX_W      = 188;
+  const int BOX_H      = 78;
+  const int LEFT_X     = 3;
+  const int RIGHT_X    = 208;
+  const int FIRST_Y    = 34;
+  const int ROW_STRIDE = 82;
   for (int p = 0; p < 3; p++) {
-    int lSlot = pairLeft[p];
-    int rSlot = pairRight[p];
-    int boxY  = FIRST_Y + p * ROW_STRIDE;
-
+    int boxY = FIRST_Y + p * ROW_STRIDE;
     for (int side = 0; side < 2; side++) {
-      int   slot    = (side == 0) ? lSlot : rSlot;
-      int   boxX    = (side == 0) ? LEFT_X : RIGHT_X;
-      bool  isHL    = (slot == officeHighlightRoom);
-      int   borderC = isHL ? YELLOW     : vga.RGB(40, 50, 80);
-      int   bgC     = isHL ? vga.RGB(0, 0, 60) : vga.RGB(18, 20, 32);
-      int   textC   = isHL ? YELLOW     : NEON_CYAN;
-
+      int  slot = (side == 0) ? pairLeft[p] : pairRight[p];
+      int  boxX = (side == 0) ? LEFT_X : RIGHT_X;
+      bool isHL = (slot == officeHighlightRoom);
+      int bgC    = isHL ? C_BLUE  : C_BLACK;   // BLACK background
+      int border = isHL ? C_WHITE : C_CYAN;
+      int textC  = isHL ? C_WHITE : C_WHITE;   // WHITE text on black
+      int dimC   = isHL ? C_CYAN  : C_CYAN;    // CYAN label on black
       vga.fillRect(boxX, boxY, BOX_W, BOX_H, bgC);
-      drawBox(boxX, boxY, BOX_W, BOX_H, borderC);
-      if (isHL) drawBox(boxX + 2, boxY + 2, BOX_W - 4, BOX_H - 4, YELLOW);
-
-      int artStartY = boxY + 4;
-      for (int r = 0; r < 5; r++) {
-        int artLen = strlen(personArt[r]);
-        int artX   = boxX + (BOX_W - artLen * 6) / 2;
-        vga.setTextColor(isHL ? vga.RGB(255, 200, 0) : vga.RGB(120, 130, 150), bgC);
-        vga.setCursor(artX, artStartY + r * 9);
-        vga.print(personArt[r]);
-      }
-
-      const char* tname    = officeTeacher[slot];
-      int         tnameLen = strlen(tname);
-      int         tnameX   = boxX + (BOX_W - tnameLen * 6) / 2;
+      drawBox(boxX, boxY, BOX_W, BOX_H, border);
+      vga.fillRect(boxX, boxY, BOX_W, 3, isHL ? C_YELLOW : C_BLUE);
+      if (isHL) drawBox(boxX + 2, boxY + 3, BOX_W - 4, BOX_H - 5, C_CYAN);
+      char rLabel[8]; sprintf(rLabel, "Room %d", slot + 1);
+      vga.setTextColor(dimC, bgC);
+      vga.setCursor(boxX + 4, boxY + 6);
+      vga.print(rLabel);
+      // Person icon
+      int personX = boxX + BOX_W / 2 - 8;
+      int personY = boxY + 20;
+      vga.fillRect(personX + 3, personY,      10, 10, isHL ? C_YELLOW : C_CYAN);  // HEAD: CYAN
+      vga.fillRect(personX,     personY + 11, 16, 14, C_CYAN);                    // BODY
+      vga.fillRect(personX - 4, personY + 13,  4,  8, C_CYAN);                    // LEFT ARM
+      vga.fillRect(personX +16, personY + 13,  4,  8, C_CYAN);                    // RIGHT ARM
+      const char* tname = officeTeacher[slot];
+      int maxChars = (BOX_W - 8) / 6;
+      char nameDisplay[28] = {0};
+      strncpy(nameDisplay, tname, min(maxChars, 27));
+      int tnameLen = strlen(nameDisplay);
+      int tnameX   = boxX + (BOX_W - tnameLen * 6) / 2;
       if (tnameX < boxX + 4) tnameX = boxX + 4;
       vga.setTextColor(textC, bgC);
-      vga.setCursor(tnameX, boxY + BOX_H - 14);
-      char nameDisplay[28] = {0};
-      int  maxChars = (BOX_W - 8) / 6;
-      strncpy(nameDisplay, tname, min(maxChars, 27));
+      vga.setCursor(tnameX, boxY + BOX_H - 13);
       vga.print(nameDisplay);
     }
+    // Corridor
+    vga.fillRect(LEFT_X + BOX_W + 2, boxY + 8,
+                 RIGHT_X - (LEFT_X + BOX_W + 4), BOX_H - 16, C_BLACK);
+    vga.setTextColor(C_BLUE, C_BLACK);
+    vga.setCursor(LEFT_X + BOX_W + 2, boxY + BOX_H/2 - 4);
+    vga.print("||");
   }
-
-  vga.setTextColor(vga.RGB(40, 50, 70), BLACK);
-  vga.setCursor(195, 140); vga.print("|");
-  vga.setCursor(195, 150); vga.print("|");
-  vga.setCursor(195, 160); vga.print("|");
-
-  drawFooter("[E:Main Menu]  [B:Back to List]");
+  vga.fillRect(0, 286, 400, 14, C_BLUE);
+  vga.fillRect(0, 285, 400, 1, C_CYAN);
+  leftText(8, 290, "[ENTER: Main Menu]  [BACK: Teacher List]", C_CYAN, C_BLUE);
 }
 
 // ========================================
-// FIRST FLOOR TEACHER LIST
+// FIRST FLOOR: TEACHER LIST
 // ========================================
 void drawFFTeacherList() {
-  drawBase("U/D:Navigate  E:Find  B:Back");
+  vga.clear(C_BLACK);
+  drawHeader();
+  drawFooter("UP/DOWN: Navigate   ENTER: Locate   BACK: Floors");
 
-  vga.fillRect(15, 55, 370, 18, vga.RGB(10, 14, 28));
-  drawBox(15, 55, 370, 18, NEON_BLUE);
-  drawGlowText(40, 60, "FIRST FLOOR - SELECT TEACHER", YELLOW, vga.RGB(10, 14, 28));
+  vga.fillRect(10, 50, 380, 20, C_WHITE);
+  drawBox(10, 50, 380, 20, C_CYAN);
+  vga.fillRect(10, 50, 3, 20, C_GREEN);
+  vga.setTextColor(C_BLUE, C_WHITE);
+  vga.setCursor(18, 55);
+  vga.print("FIRST FLOOR -- OFFICE TEACHERS");
 
   if (!ffTeacherLoaded) {
-    centerText(160, "Loading...", NEON_CYAN, BLACK);
+    vga.fillRect(40, 100, 320, 60, C_WHITE);
+    drawBox(40, 100, 320, 60, C_CYAN);
+    centerText(124, "Loading...", C_BLUE, C_WHITE);
     return;
   }
   if (ffTeacherCount == 0) {
-    centerText(160, "No teachers found!", NEON_CYAN, BLACK);
+    vga.fillRect(40, 100, 320, 60, C_WHITE);
+    drawBox(40, 100, 320, 60, C_CYAN);
+    centerText(124, "No teachers found", C_BLUE, C_WHITE);
     return;
   }
 
   const int VISIBLE = 5;
+  const int ITEM_H  = 36;
+  const int ITEM_X  = 15;
+  const int ITEM_W  = 370;
   int end = min(ffTeacherScroll + VISIBLE, ffTeacherCount);
 
-  for (int i = ffTeacherScroll; i < end; i++) {
-    int  y   = 78 + (i - ffTeacherScroll) * 40;
-    bool sel = (i == selFFTeacher);
+  if (ffTeacherScroll > 0) centerText(73, "^ more above", C_CYAN, C_BLACK);
 
-    if (sel) {
-      vga.fillRect(10, y, 380, 35, vga.RGB(10, 14, 28));
-      drawBox(10, y, 380, 35, NEON_CYAN);
-      vga.fillRect(10, y, 4, 35, NEON_CYAN);
-      drawGlowText(22, y + 13, ffTeachers[i].name, YELLOW, vga.RGB(10, 14, 28));
-      vga.setTextColor(NEON_CYAN, vga.RGB(10, 14, 28));
-      vga.setCursor(365, y + 13); vga.print(">");
-    } else {
-      vga.fillRect(10, y, 380, 35, vga.RGB(18, 20, 32));
-      drawBox(10, y, 380, 35, vga.RGB(40, 50, 70));
-      int nameLen = strlen(ffTeachers[i].name);
-      int nameX   = (400 - nameLen * 6) / 2;
-      if (nameX < 20) nameX = 20;
-      vga.setTextColor(vga.RGB(160, 170, 200), vga.RGB(18, 20, 32));
-      vga.setCursor(nameX, y + 13);
-      vga.print(ffTeachers[i].name);
-    }
+  for (int i = ffTeacherScroll; i < end; i++) {
+    int  y   = 76 + (i - ffTeacherScroll) * (ITEM_H + 3);
+    bool sel = (i == selFFTeacher);
+    int  bg  = sel ? C_BLUE : C_WHITE;
+    vga.fillRect(ITEM_X, y, ITEM_W, ITEM_H, bg);
+    drawBox(ITEM_X, y, ITEM_W, ITEM_H, sel ? C_WHITE : C_CYAN);
+    vga.fillRect(ITEM_X, y, 3, ITEM_H, C_GREEN);
+
+    vga.setTextColor(sel ? C_WHITE : C_BLACK, bg);
+    int nameLen = strlen(ffTeachers[i].name);
+    int nameX   = ITEM_X + 12 + (ITEM_W - 12 - nameLen*6) / 2;
+    if (nameX < ITEM_X + 12) nameX = ITEM_X + 12;
+    vga.setCursor(nameX, y + 13);
+    vga.print(ffTeachers[i].name);
 
     char roomLabel[12];
     if (ffTeachers[i].cabinNumber > 0)
-      sprintf(roomLabel, "C%d-R%d", ffTeachers[i].cabinNumber, ffTeachers[i].roomNumber);
+      sprintf(roomLabel, "C%d R%d", ffTeachers[i].cabinNumber, ffTeachers[i].roomNumber);
     else
-      sprintf(roomLabel, "R%d", ffTeachers[i].roomNumber);
-    vga.setTextColor(sel ? NEON_CYAN : vga.RGB(80, 90, 120), sel ? vga.RGB(10, 14, 28) : vga.RGB(18, 20, 32));
-    vga.setCursor(340, y + 13);
+      sprintf(roomLabel, "Rm %d", ffTeachers[i].roomNumber);
+    vga.setTextColor(sel ? C_CYAN : C_BLUE, bg);
+    vga.setCursor(ITEM_X + ITEM_W - strlen(roomLabel)*6 - 18, y + 13);
     vga.print(roomLabel);
+
+    if (sel) {
+      vga.setTextColor(C_WHITE, bg);
+      vga.setCursor(ITEM_X + ITEM_W - 14, y + 13);
+      vga.print(">");
+    }
   }
 
-  if (ffTeacherScroll > 0)
-    centerText(71, "^ up", NEON_CYAN, BLACK);
   if (ffTeacherScroll + VISIBLE < ffTeacherCount)
-    centerText(278, "v down", NEON_CYAN, BLACK);
+    centerText(278, "v more below", C_CYAN, C_BLACK);
 }
 
 // ========================================
-// FIRST FLOOR MAP
+// FIRST FLOOR: FLOOR MAP
 // ========================================
 void drawFFFloorMap() {
-  vga.clear(BLACK);
+  vga.clear(C_BLACK);
 
-  vga.fillRect(0, 0, 400, 18, DARK_BLUE);
-  drawBox(0, 0, 400, 18, CYAN);
-  centerText(5, "FIRST FLOOR MAP", YELLOW, DARK_BLUE);
+  vga.fillRect(0, 0, 400, 30, C_BLUE);
+  vga.fillRect(0, 0, 400, 3, C_YELLOW);
+  vga.fillRect(0, 29, 400, 1, C_CYAN);
+  vga.setTextColor(C_CYAN, C_BLUE);
+  vga.setCursor(8, 8);
+  vga.print("FIRST FLOOR");
+  centerText(14, "FLOOR PLAN", C_WHITE, C_BLUE);
 
-  drawFooter("[E:Open Cabin]  [B:Back to List]");
+  drawFooter("[ENTER: Open Cabin]  [BACK: Teacher List]");
 
-  const int SR_W = 120;
-  const int SR_H = 36;
-  const int CB_W = 108;
-  const int CB_H = 36;
+  const int SR_W = 118;
+  const int SR_H = 34;
+  const int CB_W = 106;
+  const int CB_H = 34;
 
-  const int ROW0_Y = 24;
-  const int ROW1_Y = 68;
-  const int ROW2_Y = 148;
-  const int ROW3_Y = 195;
+  const int ROW0_Y = 49;
+  const int ROW1_Y = 90;
+  const int ROW2_Y = 164;
+  const int ROW3_Y = 208;
 
-  const int ROW0_LEFT_X   = 5;
-  const int ROW0_GAP_X    = 88;
-  const int ROW0_CABIN2_X = 280;
-  const int ROW3_CABIN3_X = 5;
-  const int ROW3_R19_X    = 130;
-  const int ROW3_R20_X    = 270;
-  const int ROW3_STAIRS_X = 600;
+  const int LEFT_X     = 4;
+  const int CABIN2_X   = 288;
+  const int ROW3_C3_X  = 4;
+  const int ROW3_R19_X = 128;
+  const int ROW3_R20_X = 266;
 
-  auto drawRoomBox = [&](int bx, int by, int bw, int bh,
-                         bool isHL, bool isCabin,
-                         const char* label, const char* teacher) {
-    int bgC    = isHL ? vga.RGB(0, 0, 80)     : vga.RGB(18, 20, 32);
-    int border = isHL ? YELLOW                 : (isCabin ? NEON_CYAN : vga.RGB(40, 50, 80));
-    int labelC = isHL ? YELLOW                 : (isCabin ? NEON_CYAN : vga.RGB(150, 160, 190));
-    int nameC  = isHL ? vga.RGB(255, 220, 100) : vga.RGB(120, 130, 150);
+  bool hlRoom13 = (ffHighlightCabin==0 && ffHighlightRoom==0);
+  bool hlRoom14 = (ffHighlightCabin==0 && ffHighlightRoom==1);
+  bool hlRoom15 = (ffHighlightCabin==0 && ffHighlightRoom==2);
+  bool hlRoom19 = (ffHighlightCabin==0 && ffHighlightRoom==3);
+  bool hlRoom20 = (ffHighlightCabin==0 && ffHighlightRoom==4);
+  bool hlCabin2 = (ffHighlightCabin==2);
+  bool hlCabin3 = (ffHighlightCabin==3);
+
+  auto drawRoomCard = [&](int bx, int by, int bw, int bh,
+                          bool isHL, bool isCabin,
+                          const char* label, const char* teacher,
+                          int accentC) {
+    int bgC    = isHL ? C_BLUE  : C_WHITE;
+    int border = isHL ? C_WHITE : C_BLUE;
+    int labelC = isHL ? C_WHITE : C_BLACK;
+    int nameC  = isHL ? C_CYAN  : C_BLUE;
 
     vga.fillRect(bx, by, bw, bh, bgC);
     drawBox(bx, by, bw, bh, border);
-    if (isHL) drawBox(bx + 2, by + 2, bw - 4, bh - 4, YELLOW);
+    vga.fillRect(bx, by, bw, 3, isHL ? C_YELLOW : accentC);
+    if (isHL) drawBox(bx+2, by+3, bw-4, bh-5, C_CYAN);
 
     int lblLen = strlen(label);
-    int lblX   = bx + (bw - lblLen * 6) / 2;
-    if (lblX < bx + 2) lblX = bx + 2;
+    int lblX   = bx + (bw - lblLen*6) / 2;
+    if (lblX < bx+2) lblX = bx+2;
     vga.setTextColor(labelC, bgC);
-    vga.setCursor(lblX, by + 6);
+    vga.setCursor(lblX, by + 7);
     vga.print(label);
 
     int maxCh = (bw - 6) / 6;
     char tname[28] = {0};
     strncpy(tname, teacher, min(maxCh, 27));
     int tnameLen = strlen(tname);
-    int tnameX   = bx + (bw - tnameLen * 6) / 2;
-    if (tnameX < bx + 2) tnameX = bx + 2;
+    int tnameX   = bx + (bw - tnameLen*6) / 2;
+    if (tnameX < bx+2) tnameX = bx+2;
     vga.setTextColor(nameC, bgC);
-    vga.setCursor(tnameX, by + bh - 14);
+    vga.setCursor(tnameX, by + bh - 12);
     vga.print(tname);
-
-    if (isCabin && isHL) {
-      vga.setTextColor(YELLOW, bgC);
-      vga.setCursor(bx + bw - 18, by + bh / 2 - 4);
-      vga.print(">");
-    }
   };
 
-  bool hlRoom13  = (ffHighlightCabin == 0 && ffHighlightRoom == 0);
-  bool hlRoom14  = (ffHighlightCabin == 0 && ffHighlightRoom == 1);
-  bool hlRoom15  = (ffHighlightCabin == 0 && ffHighlightRoom == 2);
-  bool hlRoom19  = (ffHighlightCabin == 0 && ffHighlightRoom == 3);
-  bool hlRoom20  = (ffHighlightCabin == 0 && ffHighlightRoom == 4);
-  bool hlCabin2  = (ffHighlightCabin == 2);
-  bool hlCabin3  = (ffHighlightCabin == 3);
+  drawRoomCard(LEFT_X, ROW0_Y, SR_W, SR_H, hlRoom13, false, "Room 13", ffStandaloneTeacher[0], C_BLUE);
 
-  drawRoomBox(ROW0_LEFT_X, ROW0_Y, SR_W, SR_H, hlRoom13, false, "Room 13", ffStandaloneTeacher[0]);
+  vga.fillRect(LEFT_X + SR_W + 2, ROW0_Y + 4,
+               CABIN2_X - (LEFT_X + SR_W + 4), SR_H - 8, C_BLACK);
+  vga.setTextColor(C_CYAN, C_BLACK);
+  vga.setCursor(LEFT_X + SR_W + 10, ROW0_Y + 12);
+  vga.print("CORRIDOR");
 
-  vga.setTextColor(vga.RGB(40, 50, 70), BLACK);
-  vga.setCursor(ROW0_GAP_X + 4, ROW0_Y + 14); vga.print("|||");
+  drawRoomCard(CABIN2_X, ROW0_Y, CB_W, CB_H, hlCabin2, true, "CABIN 2", hlCabin2 ? "[ ENTER ]" : "Rms 7-12", C_BLUE);
 
-  drawRoomBox(ROW0_CABIN2_X, ROW0_Y, CB_W, CB_H, hlCabin2, true, "CABIN 2", hlCabin2 ? "[ ENTER ]" : "Rms 7-12");
+  drawRoomCard(LEFT_X, ROW1_Y, SR_W, SR_H, hlRoom14, false, "Room 14", ffStandaloneTeacher[1], C_BLUE);
 
-  vga.fillRect(82, ROW0_Y + SR_H / 2, ROW0_CABIN2_X - 82, 2, vga.RGB(30, 35, 55));
+  vga.fillRect(LEFT_X + SR_W, ROW0_Y + SR_H, 1, ROW2_Y - (ROW0_Y + SR_H), C_CYAN);
 
-  drawRoomBox(ROW0_LEFT_X, ROW1_Y, SR_W, SR_H, hlRoom14, false, "Room 14", ffStandaloneTeacher[1]);
-  drawRoomBox(ROW0_LEFT_X, ROW2_Y, SR_W, SR_H, hlRoom15, false, "Room 15", ffStandaloneTeacher[2]);
+  vga.setTextColor(C_CYAN, C_BLACK);
+  vga.setCursor(4, ROW2_Y - 9);
+  vga.print("- - - - - - - - - - - - - - - - - - - - -");
 
-  vga.fillRect(ROW0_LEFT_X + SR_W, ROW0_Y + SR_H,
-               2, ROW2_Y - (ROW0_Y + SR_H) + SR_H, vga.RGB(30, 35, 55));
+  drawRoomCard(LEFT_X, ROW2_Y, SR_W, SR_H, hlRoom15, false, "Room 15", ffStandaloneTeacher[2], C_BLUE);
 
-  vga.setTextColor(vga.RGB(40, 50, 70), BLACK);
-  vga.setCursor(10, ROW2_Y + SR_H + 4);
-  vga.print("- - - - - - - - - - - - - - - - - - - -");
+  drawRoomCard(ROW3_C3_X, ROW3_Y, CB_W - 10, CB_H, hlCabin3, true, "CABIN 3", hlCabin3 ? "[ ENTER ]" : "Rms 16-18", C_BLUE);
+  drawRoomCard(ROW3_R19_X, ROW3_Y, SR_W, SR_H, hlRoom19, false, "Room 19", ffStandaloneTeacher[3], C_BLUE);
+  drawRoomCard(ROW3_R20_X, ROW3_Y, SR_W, SR_H, hlRoom20, false, "Room 20", ffStandaloneTeacher[4], C_BLUE);
 
-  drawRoomBox(ROW3_CABIN3_X, ROW3_Y, CB_W - 12, CB_H, hlCabin3, true, "CABIN 3", hlCabin3 ? "[ ENTER ]" : "Rms 16-18");
-  drawRoomBox(ROW3_R19_X,    ROW3_Y, SR_W,       SR_H, hlRoom19, false, "Room 19", ffStandaloneTeacher[3]);
-  drawRoomBox(ROW3_R20_X,    ROW3_Y, SR_W,       SR_H, hlRoom20, false, "Room 20", ffStandaloneTeacher[4]);
-
-  int stBg = vga.RGB(12, 12, 18);
-  vga.fillRect(ROW3_STAIRS_X, ROW3_Y, 90, CB_H, stBg);
-  drawBox(ROW3_STAIRS_X, ROW3_Y, 90, CB_H, vga.RGB(40, 50, 70));
-  vga.setTextColor(vga.RGB(60, 70, 90), stBg);
-  vga.setCursor(ROW3_STAIRS_X + 18, ROW3_Y + 6);
+  // Stairs
+  vga.fillRect(ROW3_R20_X + SR_W + 2, ROW3_Y, 84, CB_H, C_BLACK);
+  drawBox(ROW3_R20_X + SR_W + 2, ROW3_Y, 84, CB_H, C_BLUE);
+  int stX = ROW3_R20_X + SR_W + 2;
+  vga.setTextColor(C_CYAN, C_BLACK);
+  vga.setCursor(stX + 16, ROW3_Y + 6);
   vga.print("STAIRS");
+  for (int step = 0; step < 4; step++)
+    vga.fillRect(stX + 6 + step*16, ROW3_Y + 20, 14, 3, C_CYAN);
 
-  char hint[40];
-  if (ffHighlightCabin == 2)
-    sprintf(hint, ">> CABIN 2 selected - press ENTER");
-  else if (ffHighlightCabin == 3)
-    sprintf(hint, ">> CABIN 3 selected - press ENTER");
-  else
-    sprintf(hint, "Teacher location shown above");
+  char hint[50];
+  if (ffHighlightCabin == 2)      sprintf(hint, "CABIN 2 selected -- press ENTER to open");
+  else if (ffHighlightCabin == 3) sprintf(hint, "CABIN 3 selected -- press ENTER to open");
+  else                            sprintf(hint, "Room highlighted above");
 
-  vga.setTextColor(YELLOW, BLACK);
-  int hx = (400 - strlen(hint) * 6) / 2;
-  if (hx < 5) hx = 5;
-  vga.setCursor(hx, 245);
+  vga.fillRect(4, 255, 392, 14, C_BLACK);
+  drawBox(4, 255, 392, 14, C_CYAN);
+  vga.fillRect(4, 255, 3, 14, C_CYAN);
+  vga.setTextColor(C_WHITE, C_BLACK);
+  int hx = 10 + (390 - strlen(hint)*6) / 2;
+  if (hx < 10) hx = 10;
+  vga.setCursor(hx, 259);
   vga.print(hint);
 }
 
@@ -1700,145 +1604,132 @@ void drawFFFloorMap() {
 // CABIN 2 MAP
 // ========================================
 void drawCabin2Map() {
-  vga.clear(BLACK);
+  vga.clear(C_BLACK);
 
-  vga.fillRect(0, 0, 400, 18, DARK_BLUE);
-  drawBox(0, 0, 400, 18, CYAN);
-  centerText(5, "CABIN 2 - ROOMS 7 TO 12", YELLOW, DARK_BLUE);
+  vga.fillRect(0, 0, 400, 30, C_BLUE);
+  vga.fillRect(0, 0, 400, 3, C_YELLOW);
+  vga.fillRect(0, 29, 400, 1, C_CYAN);
+  vga.setTextColor(C_CYAN, C_BLUE);
+  vga.setCursor(8, 8);
+  vga.print("FIRST FLOOR  /  CABIN 2");
+  centerText(14, "ROOMS 7 - 12", C_WHITE, C_BLUE);
 
-  drawFooter("[B:Back to Floor Map]");
+  drawFooter("[BACK: Floor Map]");
 
   const int pairLeft[3]  = { 0, 2, 4 };
   const int pairRight[3] = { 1, 3, 5 };
-
-  const int BOX_W      = 185;
+  const int BOX_W      = 188;
   const int BOX_H      = 78;
-  const int LEFT_X     = 5;
-  const int RIGHT_X    = 210;
-  const int FIRST_Y    = 22;
+  const int LEFT_X     = 3;
+  const int RIGHT_X    = 207;
+  const int FIRST_Y    = 34;
   const int ROW_STRIDE = 82;
 
-  const char* personArt[5] = {
-    "     ____         ",
-    "     |    |        ",
-    "    |____| O     ",
-    "      |  /||\\   ",
-    "     (  ) _/     "
-  };
-
   for (int p = 0; p < 3; p++) {
-    int lSlot = pairLeft[p];
-    int rSlot = pairRight[p];
-    int boxY  = FIRST_Y + p * ROW_STRIDE;
-
+    int boxY = FIRST_Y + p * ROW_STRIDE;
     for (int side = 0; side < 2; side++) {
-      int   slot    = (side == 0) ? lSlot : rSlot;
-      int   boxX    = (side == 0) ? LEFT_X : RIGHT_X;
-      bool  isHL    = (slot == ffHighlightRoom);
-      int   borderC = isHL ? YELLOW : vga.RGB(40, 50, 80);
-      int   bgC     = isHL ? vga.RGB(0, 0, 60) : vga.RGB(18, 20, 32);
-      int   textC   = isHL ? YELLOW : NEON_CYAN;
+      int  slot = (side == 0) ? pairLeft[p] : pairRight[p];
+      int  boxX = (side == 0) ? LEFT_X : RIGHT_X;
+      bool isHL = (slot == ffHighlightRoom);
+
+      int bgC    = isHL ? C_BLUE  : C_BLACK;   // BLACK background
+      int border = isHL ? C_WHITE : C_CYAN;
+      int textC  = isHL ? C_WHITE : C_WHITE;   // WHITE text on black
+      int dimC   = isHL ? C_CYAN  : C_CYAN;    // CYAN label on black
 
       vga.fillRect(boxX, boxY, BOX_W, BOX_H, bgC);
-      drawBox(boxX, boxY, BOX_W, BOX_H, borderC);
-      if (isHL) drawBox(boxX + 2, boxY + 2, BOX_W - 4, BOX_H - 4, YELLOW);
+      drawBox(boxX, boxY, BOX_W, BOX_H, border);
+      vga.fillRect(boxX, boxY, BOX_W, 3, isHL ? C_YELLOW : C_BLUE);
+      if (isHL) drawBox(boxX+2, boxY+3, BOX_W-4, BOX_H-5, C_CYAN);
 
-      char roomLabel[10];
-      sprintf(roomLabel, "Room %d", CABIN2_SLOT_TO_ROOM[slot]);
-      vga.setTextColor(isHL ? YELLOW : vga.RGB(80, 90, 110), bgC);
-      vga.setCursor(boxX + 4, boxY + 3);
-      vga.print(roomLabel);
+      char rLabel[10]; sprintf(rLabel, "Room %d", CABIN2_SLOT_TO_ROOM[slot]);
+      vga.setTextColor(dimC, bgC);
+      vga.setCursor(boxX + 4, boxY + 6);
+      vga.print(rLabel);
 
-      int artStartY = boxY + 14;
-      for (int r = 0; r < 5; r++) {
-        int artLen = strlen(personArt[r]);
-        int artX   = boxX + (BOX_W - artLen * 6) / 2;
-        vga.setTextColor(isHL ? vga.RGB(255, 200, 0) : vga.RGB(80, 90, 110), bgC);
-        vga.setCursor(artX, artStartY + r * 8);
-        vga.print(personArt[r]);
-      }
+      // Person icon
+      int pX = boxX + BOX_W/2 - 7;
+      int pY = boxY + 18;
+      vga.fillRect(pX+2, pY,    10, 9,  isHL ? C_YELLOW : C_CYAN);  // HEAD: CYAN
+      vga.fillRect(pX,   pY+10, 14, 12, C_CYAN);                    // BODY
+      vga.fillRect(pX-3, pY+12,  3,  7, C_CYAN);                    // LEFT ARM
+      vga.fillRect(pX+14,pY+12,  3,  7, C_CYAN);                    // RIGHT ARM
 
-      const char* tname    = cabin2Teacher[slot];
-      int         tnameLen = strlen(tname);
-      int         tnameX   = boxX + (BOX_W - tnameLen * 6) / 2;
-      if (tnameX < boxX + 4) tnameX = boxX + 4;
-      char nameDisplay[28] = {0};
-      int  maxChars = (BOX_W - 8) / 6;
-      strncpy(nameDisplay, tname, min(maxChars, 27));
+      const char* tname = cabin2Teacher[slot];
+      int maxCh = (BOX_W - 8) / 6;
+      char nameDisplay[28]={0}; strncpy(nameDisplay, tname, min(maxCh,27));
+      int tnLen = strlen(nameDisplay);
+      int tnX   = boxX + (BOX_W - tnLen*6) / 2;
+      if (tnX < boxX+4) tnX = boxX+4;
       vga.setTextColor(textC, bgC);
-      vga.setCursor(tnameX, boxY + BOX_H - 12);
+      vga.setCursor(tnX, boxY + BOX_H - 12);
       vga.print(nameDisplay);
     }
-  }
 
-  vga.setTextColor(vga.RGB(40, 50, 70), BLACK);
-  vga.setCursor(197, 90);  vga.print("|");
-  vga.setCursor(197, 100); vga.print("|");
-  vga.setCursor(197, 110); vga.print("|");
+    // Corridor
+    vga.fillRect(LEFT_X + BOX_W + 1, boxY + 6,
+                 RIGHT_X - (LEFT_X + BOX_W + 2), BOX_H - 12, C_BLACK);
+    vga.setTextColor(C_BLUE, C_BLACK);
+    vga.setCursor(LEFT_X + BOX_W + 2, boxY + BOX_H/2 - 4);
+    vga.print("||");
+  }
 }
 
 // ========================================
 // CABIN 3 MAP
 // ========================================
 void drawCabin3Map() {
-  vga.clear(BLACK);
+  vga.clear(C_BLACK);
 
-  vga.fillRect(0, 0, 400, 18, DARK_BLUE);
-  drawBox(0, 0, 400, 18, CYAN);
-  centerText(5, "CABIN 3 - ROOMS 16 TO 18", YELLOW, DARK_BLUE);
+  vga.fillRect(0, 0, 400, 30, C_BLUE);
+  vga.fillRect(0, 0, 400, 3, C_YELLOW);
+  vga.fillRect(0, 29, 400, 1, C_CYAN);
+  vga.setTextColor(C_CYAN, C_BLUE);
+  vga.setCursor(8, 8);
+  vga.print("FIRST FLOOR  /  CABIN 3");
+  centerText(14, "ROOMS 16 - 18", C_WHITE, C_BLUE);
 
-  drawFooter("[B:Back to Floor Map]");
+  drawFooter("[BACK: Floor Map]");
 
-  const int BOX_W   = 260;
-  const int BOX_H   = 72;
+  const int BOX_W   = 270;
+  const int BOX_H   = 78;
   const int BOX_X   = (400 - BOX_W) / 2;
-  const int FIRST_Y = 24;
-  const int STRIDE  = 78;
-
-  const char* personArt[5] = {
-    "     ____         ",
-    "     |    |        ",
-    "    |____| O     ",
-    "      |  /||\\   ",
-    "     (  ) _/     "
-  };
+  const int FIRST_Y = 38;
+  const int STRIDE  = 82;
 
   for (int slot = 0; slot < CABIN3_ROOM_COUNT; slot++) {
     int  boxY = FIRST_Y + slot * STRIDE;
     bool isHL = (slot == ffHighlightRoom);
 
-    int bgC    = isHL ? vga.RGB(0, 0, 60)  : vga.RGB(18, 20, 32);
-    int border = isHL ? YELLOW              : vga.RGB(40, 50, 80);
-    int textC  = isHL ? YELLOW              : NEON_CYAN;
+    int bgC    = isHL ? C_BLUE  : C_BLACK;   // BLACK background
+    int border = isHL ? C_WHITE : C_CYAN;
+    int textC  = isHL ? C_WHITE : C_WHITE;   // WHITE text on black
+    int dimC   = isHL ? C_CYAN  : C_CYAN;    // CYAN label on black
 
     vga.fillRect(BOX_X, boxY, BOX_W, BOX_H, bgC);
     drawBox(BOX_X, boxY, BOX_W, BOX_H, border);
-    if (isHL) drawBox(BOX_X + 2, boxY + 2, BOX_W - 4, BOX_H - 4, YELLOW);
+    vga.fillRect(BOX_X, boxY, BOX_W, 3, isHL ? C_YELLOW : C_BLUE);
+    if (isHL) drawBox(BOX_X+2, boxY+3, BOX_W-4, BOX_H-5, C_CYAN);
 
-    char roomLabel[10];
-    sprintf(roomLabel, "Room %d", CABIN3_SLOT_TO_ROOM[slot]);
-    vga.setTextColor(isHL ? YELLOW : vga.RGB(80, 90, 110), bgC);
-    vga.setCursor(BOX_X + 4, boxY + 3);
-    vga.print(roomLabel);
+    char rLabel[10]; sprintf(rLabel, "Room %d", CABIN3_SLOT_TO_ROOM[slot]);
+    vga.setTextColor(dimC, bgC);
+    vga.setCursor(BOX_X + 4, boxY + 6);
+    vga.print(rLabel);
 
-    int artStartY = boxY + 14;
-    for (int r = 0; r < 3; r++) {
-      int artLen = strlen(personArt[r]);
-      int artX   = BOX_X + (BOX_W - artLen * 6) / 2;
-      vga.setTextColor(isHL ? vga.RGB(255, 200, 0) : vga.RGB(80, 90, 110), bgC);
-      vga.setCursor(artX, artStartY + r * 9);
-      vga.print(personArt[r]);
-    }
+    // Person icon
+    int pX = BOX_X + BOX_W/2 - 7;
+    int pY = boxY + 16;
+    vga.fillRect(pX+2, pY,    10, 9,  isHL ? C_YELLOW : C_CYAN);  // HEAD: CYAN
+    vga.fillRect(pX,   pY+10, 14, 12, C_CYAN);                    // BODY
 
-    const char* tname    = cabin3Teacher[slot];
-    int         tnameLen = strlen(tname);
-    int         tnameX   = BOX_X + (BOX_W - tnameLen * 6) / 2;
-    if (tnameX < BOX_X + 4) tnameX = BOX_X + 4;
-    char nameDisplay[38] = {0};
-    int  maxChars = (BOX_W - 8) / 6;
-    strncpy(nameDisplay, tname, min(maxChars, 37));
+    const char* tname = cabin3Teacher[slot];
+    int maxCh = (BOX_W - 8) / 6;
+    char nameDisplay[38]={0}; strncpy(nameDisplay, tname, min(maxCh,37));
+    int tnLen = strlen(nameDisplay);
+    int tnX   = BOX_X + (BOX_W - tnLen*6) / 2;
+    if (tnX < BOX_X+4) tnX = BOX_X+4;
     vga.setTextColor(textC, bgC);
-    vga.setCursor(tnameX, boxY + BOX_H - 12);
+    vga.setCursor(tnX, boxY + BOX_H - 12);
     vga.print(nameDisplay);
   }
 }
@@ -1851,21 +1742,22 @@ void onMessage(char* topic, byte* payload, unsigned int len) {
   for (int i = 0; i < (int)len; i++) msg += (char)payload[i];
   DynamicJsonDocument doc(512);
   if (deserializeJson(doc, msg)) return;
-
   const char* action   = doc["action"]          | "";
   int         annId    = doc["announcement_id"] | 0;
   const char* title    = doc["title"]           | "";
   const char* message  = doc["message"]         | "";
   const char* category = doc["category"]        | "";
-
   if (strcmp(action, "deleted") == 0) { fetchAnnouncements(); return; }
-
   if (!hasSeenAnnouncement(annId)) {
     if      (strcmp(category, "urgent")  == 0) { addToCategory(urgent,   annId, title, message, true); beep(3); }
     else if (strcmp(category, "general") == 0) { addToCategory(general,  annId, title, message, true); beep(1); }
     else if (strcmp(category, "event")   == 0) { addToCategory(eventCat, annId, title, message, true); beep(2); }
-    else if (strcmp(category, "office")  == 0) { addToCategory(office,   annId, title, message, true); beep(1); }
     markAnnouncementAsSeen(annId);
+
+    // ADD THIS — if user is already viewing that category, jump to the new one
+    if (currentState == URGENT_VIEW  && strcmp(category, "urgent")  == 0) showCategory(urgent,   "URGENT NOTICE");
+    if (currentState == GENERAL_VIEW && strcmp(category, "general") == 0) showCategory(general,  "GENERAL NOTICE");
+    if (currentState == EVENT_VIEW   && strcmp(category, "event")   == 0) showCategory(eventCat, "EVENT NOTICE");
   }
   updateLEDs();
   if (currentState == MENU) drawMenu();
@@ -1877,11 +1769,9 @@ void connectMQTT() {
   if (millis() - lastMQTTAttempt < MQTT_RETRY_INTERVAL) return;
   lastMQTTAttempt = millis();
   if (mqttConnectionAttempts >= MAX_MQTT_ATTEMPTS) { mqttConnectionAttempts = 0; return; }
-
   char clientId[30];
   uint64_t mac = ESP.getEfuseMac();
   sprintf(clientId, "NoticeBrd_%04X%04X", (uint16_t)(mac >> 32), (uint16_t)(mac & 0xFFFF));
-
   if (client.connect(clientId)) {
     client.subscribe("department/notices");
     mqttConnectionAttempts = 0;
@@ -1895,42 +1785,32 @@ void connectMQTT() {
 // ========================================
 void handleButtons() {
   if (millis() - lastPress < DEBOUNCE) return;
-
   bool up    = (digitalRead(upBtn)    == LOW);
   bool down  = (digitalRead(downBtn)  == LOW);
   bool enter = (digitalRead(enterBtn) == LOW);
   bool back  = (digitalRead(backBtn)  == LOW);
-
   if (!up && !down && !enter && !back) return;
   lastPress = millis();
-
-  if (up || down) playSelectSound();
 
   if (currentState == MENU) {
     if (up)   { selectedMenu--; if (selectedMenu < 0) selectedMenu = 4; drawMenu(); }
     if (down) { selectedMenu++; if (selectedMenu > 4) selectedMenu = 0; drawMenu(); }
     if (enter) {
-      playConfirmSound();
       if      (selectedMenu == 0) { currentState = URGENT_VIEW;  showCategory(urgent,   "URGENT NOTICE");  }
       else if (selectedMenu == 1) { currentState = GENERAL_VIEW; showCategory(general,  "GENERAL NOTICE"); }
       else if (selectedMenu == 2) { currentState = EVENT_VIEW;   showCategory(eventCat, "EVENT NOTICE");   }
       else if (selectedMenu == 3) {
-        selOfficeFloor    = 0;
-        officeFloorScroll = 0;
-        currentState = OFFICE_FLOOR;
-        drawOfficeFloorSelect();
+        selOfficeFloor = 0; officeFloorScroll = 0;
+        currentState = OFFICE_FLOOR; drawOfficeFloorSelect();
       }
       else if (selectedMenu == 4) {
         if (selYear >= totalYears && totalYears > 0) selYear = 0;
         yearScrollOff = (selYear >= 5) ? selYear - 4 : 0;
         currentState = TT_YEAR;
-        showLoading("Loading years...");
-        fetchYears();
-        drawYearSelect();
+        showLoading("Loading years..."); fetchYears(); drawYearSelect();
       }
     }
   }
-
   else if (currentState == URGENT_VIEW) {
     if (up)   { urgent.index--; if (urgent.index < 0) urgent.index = urgent.count - 1; showCategory(urgent, "URGENT NOTICE"); }
     if (down) { urgent.index++; if (urgent.index >= urgent.count) urgent.index = 0;    showCategory(urgent, "URGENT NOTICE"); }
@@ -1949,137 +1829,79 @@ void handleButtons() {
   else if (currentState == OFFICE_VIEW) {
     if (back) { currentState = MENU; drawMenu(); }
   }
-
   else if (currentState == TT_YEAR) {
-    if (up)   { if (selYear > 0)              { selYear--; if (selYear < yearScrollOff) yearScrollOff = selYear; } drawYearSelect(); }
-    if (down) { if (selYear < totalYears - 1) { selYear++; if (selYear >= yearScrollOff + 5) yearScrollOff = selYear - 4; } drawYearSelect(); }
+    if (up)    { if (selYear > 0) { selYear--; if (selYear < yearScrollOff) yearScrollOff = selYear; } drawYearSelect(); }
+    if (down)  { if (selYear < totalYears-1) { selYear++; if (selYear >= yearScrollOff+5) yearScrollOff=selYear-4; } drawYearSelect(); }
     if (enter) {
-      if (selSession >= totalSessions) selSession = 0;
-      sessionScrollOff = (selSession >= 5) ? selSession - 4 : 0;
-      showLoading("Loading sessions...");
-      fetchSessions(years[selYear].id);
+      sessionScrollOff = (selSession >= 5) ? selSession-4 : 0;
+      showLoading("Loading sessions..."); fetchSessions(years[selYear].id);
       if (selSession >= totalSessions) { selSession = 0; sessionScrollOff = 0; }
-      currentState = TT_SESSION;
-      drawSessionSelect();
+      currentState = TT_SESSION; drawSessionSelect();
     }
     if (back) { currentState = MENU; drawMenu(); }
   }
   else if (currentState == TT_SESSION) {
-    if (up)   { if (selSession > 0)              { selSession--; if (selSession < sessionScrollOff) sessionScrollOff = selSession; } drawSessionSelect(); }
-    if (down) { if (selSession < totalSessions-1) { selSession++; if (selSession >= sessionScrollOff + 5) sessionScrollOff = selSession - 4; } drawSessionSelect(); }
+    if (up)    { if (selSession > 0) { selSession--; if (selSession < sessionScrollOff) sessionScrollOff=selSession; } drawSessionSelect(); }
+    if (down)  { if (selSession < totalSessions-1) { selSession++; if (selSession >= sessionScrollOff+5) sessionScrollOff=selSession-4; } drawSessionSelect(); }
     if (enter) {
-      if (selSection >= totalSections) selSection = 0;
-      sectionScrollOff = (selSection >= 5) ? selSection - 4 : 0;
-      showLoading("Loading sections...");
-      fetchSections(sessions[selSession].id);
+      sectionScrollOff = (selSection >= 5) ? selSection-4 : 0;
+      showLoading("Loading sections..."); fetchSections(sessions[selSession].id);
       if (selSection >= totalSections) { selSection = 0; sectionScrollOff = 0; }
-      currentState = TT_SECTION;
-      drawSectionSelect();
+      currentState = TT_SECTION; drawSectionSelect();
     }
     if (back) { currentState = TT_YEAR; drawYearSelect(); }
   }
   else if (currentState == TT_SECTION) {
-    if (up)   { if (selSection > 0)              { selSection--; if (selSection < sectionScrollOff) sectionScrollOff = selSection; } drawSectionSelect(); }
-    if (down) { if (selSection < totalSections-1) { selSection++; if (selSection >= sectionScrollOff + 5) sectionScrollOff = selSection - 4; } drawSectionSelect(); }
-    if (enter) {
-      showLoading("Loading timetable...");
-      fetchTimetable(selYear, selSession, selSection);
-      currentState = TT_DISPLAY;
-      drawTimetable();
-    }
-    if (back) { currentState = TT_SESSION; drawSessionSelect(); }
+    if (up)    { if (selSection > 0) { selSection--; if (selSection < sectionScrollOff) sectionScrollOff=selSection; } drawSectionSelect(); }
+    if (down)  { if (selSection < totalSections-1) { selSection++; if (selSection >= sectionScrollOff+5) sectionScrollOff=selSection-4; } drawSectionSelect(); }
+    if (enter) { showLoading("Loading timetable..."); fetchTimetable(selYear,selSession,selSection); currentState=TT_DISPLAY; drawTimetable(); }
+    if (back)  { currentState = TT_SESSION; drawSessionSelect(); }
   }
   else if (currentState == TT_DISPLAY) {
     if (enter) { currentState = MENU; drawMenu(); }
     if (back)  { currentState = TT_SECTION; drawSectionSelect(); }
   }
-
   else if (currentState == OFFICE_FLOOR) {
     if (up)   { if (selOfficeFloor > 0) selOfficeFloor--; drawOfficeFloorSelect(); }
-    if (down) { if (selOfficeFloor < OFFICE_FLOOR_COUNT - 1) selOfficeFloor++; drawOfficeFloorSelect(); }
+    if (down) { if (selOfficeFloor < OFFICE_FLOOR_COUNT-1) selOfficeFloor++; drawOfficeFloorSelect(); }
     if (enter) {
-      playConfirmSound();
       if (selOfficeFloor == 0) {
-        showLoading("Loading office data...");
-        fetchOfficeTeachers(OFFICE_FLOORS[0]);
-        selOfficeTeacher    = 0;
-        officeTeacherScroll = 0;
-        currentState = OFFICE_TEACHERS;
-        drawOfficeTeacherSelect();
+        showLoading("Loading office data..."); fetchOfficeTeachers(OFFICE_FLOORS[0]);
+        selOfficeTeacher = 0; officeTeacherScroll = 0;
+        currentState = OFFICE_TEACHERS; drawOfficeTeacherSelect();
       } else {
-        showLoading("Loading first floor data...");
-        fetchFirstFloorTeachers();
-        selFFTeacher    = 0;
-        ffTeacherScroll = 0;
-        ffHighlightCabin = 0;
-        ffHighlightRoom  = -1;
-        currentState = FF_TEACHER_LIST;
-        drawFFTeacherList();
+        showLoading("Loading first floor data..."); fetchFirstFloorTeachers();
+        selFFTeacher = 0; ffTeacherScroll = 0;
+        ffHighlightCabin = 0; ffHighlightRoom = -1;
+        currentState = FF_TEACHER_LIST; drawFFTeacherList();
       }
     }
     if (back) { currentState = MENU; drawMenu(); }
   }
   else if (currentState == OFFICE_TEACHERS) {
-    if (up) {
-      if (selOfficeTeacher > 0) {
-        selOfficeTeacher--;
-        if (selOfficeTeacher < officeTeacherScroll) officeTeacherScroll = selOfficeTeacher;
-      }
-      drawOfficeTeacherSelect();
-    }
-    if (down) {
-      if (selOfficeTeacher < OFFICE_ROOM_COUNT - 1) {
-        selOfficeTeacher++;
-        if (selOfficeTeacher >= officeTeacherScroll + 5) officeTeacherScroll = selOfficeTeacher - 4;
-      }
-      drawOfficeTeacherSelect();
-    }
-    if (enter) {
-      officeHighlightRoom = selOfficeTeacher;
-      currentState = OFFICE_MAP;
-      drawOfficeMap();
-    }
-    if (back) {
-      currentState = OFFICE_FLOOR;
-      drawOfficeFloorSelect();
-    }
+    if (up)   { if (selOfficeTeacher > 0) { selOfficeTeacher--; if (selOfficeTeacher < officeTeacherScroll) officeTeacherScroll=selOfficeTeacher; } drawOfficeTeacherSelect(); }
+    if (down) { if (selOfficeTeacher < OFFICE_ROOM_COUNT-1) { selOfficeTeacher++; if (selOfficeTeacher >= officeTeacherScroll+5) officeTeacherScroll=selOfficeTeacher-4; } drawOfficeTeacherSelect(); }
+    if (enter) { officeHighlightRoom = selOfficeTeacher; currentState = OFFICE_MAP; drawOfficeMap(); }
+    if (back)  { currentState = OFFICE_FLOOR; drawOfficeFloorSelect(); }
   }
   else if (currentState == OFFICE_MAP) {
     if (enter) { officeHighlightRoom = -1; currentState = MENU; drawMenu(); }
     if (back)  { officeHighlightRoom = -1; currentState = OFFICE_TEACHERS; drawOfficeTeacherSelect(); }
   }
   else if (currentState == FF_TEACHER_LIST) {
-    if (up) {
-      if (selFFTeacher > 0) {
-        selFFTeacher--;
-        if (selFFTeacher < ffTeacherScroll) ffTeacherScroll = selFFTeacher;
-      }
-      drawFFTeacherList();
-    }
-    if (down) {
-      if (selFFTeacher < ffTeacherCount - 1) {
-        selFFTeacher++;
-        if (selFFTeacher >= ffTeacherScroll + 5) ffTeacherScroll = selFFTeacher - 4;
-      }
-      drawFFTeacherList();
-    }
+    if (up)   { if (selFFTeacher > 0) { selFFTeacher--; if (selFFTeacher < ffTeacherScroll) ffTeacherScroll=selFFTeacher; } drawFFTeacherList(); }
+    if (down) { if (selFFTeacher < ffTeacherCount-1) { selFFTeacher++; if (selFFTeacher >= ffTeacherScroll+5) ffTeacherScroll=selFFTeacher-4; } drawFFTeacherList(); }
     if (enter) {
       ffSelectedTeacherIdx = selFFTeacher;
       resolveFFTeacherHighlight(selFFTeacher);
-      currentState = FF_FLOOR_MAP;
-      drawFFFloorMap();
+      currentState = FF_FLOOR_MAP; drawFFFloorMap();
     }
     if (back) { currentState = OFFICE_FLOOR; drawOfficeFloorSelect(); }
   }
   else if (currentState == FF_FLOOR_MAP) {
     if (enter) {
-      if (ffHighlightCabin == 2) {
-        currentState = FF_CABIN2_MAP;
-        drawCabin2Map();
-      } else if (ffHighlightCabin == 3) {
-        currentState = FF_CABIN3_MAP;
-        drawCabin3Map();
-      }
+      if      (ffHighlightCabin == 2) { currentState = FF_CABIN2_MAP; drawCabin2Map(); }
+      else if (ffHighlightCabin == 3) { currentState = FF_CABIN3_MAP; drawCabin3Map(); }
     }
     if (back) { currentState = FF_TEACHER_LIST; drawFFTeacherList(); }
   }
@@ -2092,7 +1914,7 @@ void handleButtons() {
 }
 
 // ========================================
-// WiFi EVENT HANDLERS
+// WiFi EVENTS
 // ========================================
 void onWiFiEvent(WiFiEvent_t event) {
   switch (event) {
@@ -2103,6 +1925,80 @@ void onWiFiEvent(WiFiEvent_t event) {
       Serial.println("[WiFi] Disconnected — auto-reconnecting...");
       break;
     default: break;
+  }
+}
+
+
+void showCredits() {
+  vga.clear(C_BLACK);
+  vga.fillRect(0, 0, 400, 4, C_YELLOW);
+
+  // Outer blue container box
+  vga.fillRect(10, 10, 380, 278, C_BLUE);
+  drawBox(10, 10, 380, 278, C_WHITE);
+
+  // Header white box — full width like footer
+  vga.fillRect(16, 20, 368, 30, C_WHITE);
+  drawBox(16, 20, 368, 30, C_WHITE);
+  centerText(30, "UET CS DEPARTMENT", C_BLUE, C_WHITE);
+
+  // NOTICE BOARD below header box on blue bg
+  centerText(58, "NOTICE BOARD", C_WHITE, C_BLUE);
+
+  // Cyan divider
+  vga.fillRect(20, 72, 360, 1, C_CYAN);
+
+  // "DEVELOPED BY" badge
+  int dbw = 11 * 6 + 16;
+  int dbx = (400 - dbw) / 2;
+  vga.fillRect(dbx, 78, dbw, 14, C_WHITE);
+  drawBox(dbx, 78, dbw, 14, C_WHITE);
+  vga.setTextColor(C_BLACK, C_WHITE);
+  vga.setCursor(dbx + 8, 82);
+  vga.print("DEVELOPED BY");
+
+  // Card data
+  const char* names[4]   = { "Haram Naseeb", "Hania Bukhari", "Wareesha Ameer Khan", "Muntaha Fatima" };
+  const char* initials[4]= { "HN", "HB", "WA", "MF" };
+  const char* rollnos[4] = { "2024-CS-230", "2024-CS-220", "2024-CS-202", "2024-CS-196" };
+
+  const int CARD_W = 172;
+  const int CARD_H = 52;
+  const int xs[4]  = { 16, 206, 16, 206 };
+  const int ys[4]  = { 100, 100, 162, 162 };
+
+  for (int i = 0; i < 4; i++) {
+    int x = xs[i], y = ys[i];
+
+    vga.fillRect(x, y, CARD_W, CARD_H, C_BLACK);
+    drawBox(x, y, CARD_W, CARD_H, C_CYAN);
+    vga.fillRect(x, y, CARD_W, 3, C_YELLOW);
+
+    vga.fillRect(x + 6, y + 12, 26, 26, C_BLUE);
+    drawBox(x + 6, y + 12, 26, 26, C_CYAN);
+    vga.setTextColor(C_WHITE, C_BLUE);
+    vga.setCursor(x + 11, y + 21);
+    vga.print(initials[i]);
+
+    vga.setTextColor(C_WHITE, C_BLACK);
+    vga.setCursor(x + 38, y + 16);
+    vga.print(names[i]);
+
+    vga.setTextColor(C_CYAN, C_BLACK);
+    vga.setCursor(x + 38, y + 30);
+    vga.print(rollnos[i]);
+  }
+
+  // Footer white box — close to bottom border
+  vga.fillRect(16, 230, 368, 18, C_WHITE);
+  drawBox(16, 230, 368, 18, C_WHITE);
+  centerText(234, "2024-2025 | CS DEPT PROJECT", C_BLACK, C_WHITE);
+
+  delay(4000);
+
+  for (int y = 0; y < 300; y += 4) {
+    vga.fillRect(0, y, 400, 4, C_BLUE);
+    delay(6);
   }
 }
 
@@ -2125,52 +2021,37 @@ void setup() {
   currentTT.count = 0;
   currentTT.yearIdx = currentTT.sessionIdx = currentTT.sectionIdx = -1;
 
-  for (int i = 0; i < OFFICE_ROOM_COUNT;    i++) strncpy(officeTeacher[i],       "----", 31);
-  for (int i = 0; i < FF_STANDALONE_COUNT;  i++) strncpy(ffStandaloneTeacher[i], "----", 31);
-  for (int i = 0; i < CABIN2_ROOM_COUNT;    i++) strncpy(cabin2Teacher[i],       "----", 31);
-  for (int i = 0; i < CABIN3_ROOM_COUNT;    i++) strncpy(cabin3Teacher[i],       "----", 31);
+  for (int i = 0; i < OFFICE_ROOM_COUNT;   i++) strncpy(officeTeacher[i],       "----", 31);
+  for (int i = 0; i < FF_STANDALONE_COUNT; i++) strncpy(ffStandaloneTeacher[i], "----", 31);
+  for (int i = 0; i < CABIN2_ROOM_COUNT;   i++) strncpy(cabin2Teacher[i],        "----", 31);
+  for (int i = 0; i < CABIN3_ROOM_COUNT;   i++) strncpy(cabin3Teacher[i],        "----", 31);
 
   vga.init(vga.MODE400x300, redPin, greenPin, bluePin, hsyncPin, vsyncPin);
   vga.setFont(Font6x8);
 
-  BLACK      = vga.RGB(0,   0,   0);
-  WHITE      = vga.RGB(255, 255, 255);
-  RED        = vga.RGB(255, 0,   0);
-  GREEN      = vga.RGB(0,   200, 0);
-  BLUE       = vga.RGB(0,   0,   255);
-  YELLOW     = vga.RGB(255, 255, 0);
-  CYAN       = vga.RGB(0,   255, 255);
-  GRAY       = vga.RGB(60,  65,  80);
-  LIGHT_BLUE = vga.RGB(100, 120, 255);
-  DARK_BLUE  = vga.RGB(0,   0,   80);
+  // 8 VGA colors — initialize after vga.init()
+  C_BLACK   = vga.RGB(  0,   0,   0);
+  C_RED     = vga.RGB(255,   0,   0);
+  C_GREEN   = vga.RGB(  0, 255,   0);
+  C_YELLOW  = vga.RGB(255, 255,   0);
+  C_BLUE    = vga.RGB(  0,   0, 255);
+  C_MAGENTA = vga.RGB(255,   0, 255);
+  C_CYAN    = vga.RGB(  0, 255, 255);
+  C_WHITE   = vga.RGB(255, 255, 255);
 
-  NEON_PINK   = vga.RGB(255, 20,  147);
-  NEON_BLUE   = vga.RGB(0,   200, 255);
-  DARK_CYBER  = vga.RGB(10,  12,  22);
-  CARD_DARK   = vga.RGB(18,  20,  32);
-  NEON_GREEN  = vga.RGB(0,   220, 100);
-  NEON_YELLOW = vga.RGB(255, 240, 50);
-  NEON_PURPLE = vga.RGB(180, 50,  255);
-  DIM_BLUE    = vga.RGB(0,   40,  80);
-  GLOW_CYAN   = vga.RGB(0,   180, 230);
-  NEON_CYAN   = vga.RGB(0,   230, 200);
+  loadNotifiedFromFlash();
+  // Boot splash
+  vga.clear(C_BLUE);
+  vga.fillRect(0, 0, 400, 4, C_YELLOW);
+  vga.fillRect(60, 80, 280, 130, C_BLACK);
+  drawBox(60, 80, 280, 130, C_CYAN);
+  vga.fillRect(60, 80, 280, 3, C_CYAN);
 
-  vga.clear(BLACK);
-  vga.fillRect(0, 0, 400, 300, DARK_CYBER);
-  drawBox(10, 10, 380, 280, NEON_BLUE);
-  drawBox(14, 14, 372, 272, vga.RGB(0, 40, 80));
-
-  drawGlowText(80, 90, ">> NEURAL INTERFACE <<", NEON_PINK, DARK_CYBER);
-  drawGlowText(110, 115, "DEPT NOTICE BOARD", NEON_BLUE, DARK_CYBER);
-
-  vga.setTextColor(vga.RGB(80, 90, 120), DARK_CYBER);
-  vga.setCursor(60, 150); vga.print("WiFiManager Starting...");
-  vga.setCursor(60, 168); vga.print("Connect: NoticeBoardSetup");
-  vga.setCursor(60, 186); vga.print("Open: 192.168.4.1");
-
-  vga.fillRect(14, 260, 372, 2, NEON_BLUE);
-  vga.setTextColor(vga.RGB(60, 70, 100), DARK_CYBER);
-  vga.setCursor(80, 265); vga.print("[ SYSTEM BOOT SEQUENCE ]");
+  centerText(100, "UET CS DEPARTMENT", C_CYAN,  C_BLACK);
+  centerText(120, "NOTICE BOARD",      C_WHITE, C_BLACK);
+  centerText(148, "Connecting to WiFi...",        C_CYAN,  C_BLACK);
+  centerText(164, "Connect to: NoticeBoardSetup", C_WHITE, C_BLACK);
+  centerText(180, "Open: 192.168.4.1 in browser", C_WHITE, C_BLACK);
 
   WiFi.setAutoReconnect(true);
   WiFi.persistent(true);
@@ -2181,31 +2062,41 @@ void setup() {
     wifiManager.setConfigPortalTimeout(0);
     wifiManager.autoConnect("NoticeBoardSetup");
   }
+  MDNS.begin("esp32board");
 
-  resolveServerIP();
+  resolveFFTeacherHighlight(-1);
 
-  vga.clear(DARK_CYBER);
-  drawBox(10, 10, 380, 280, NEON_GREEN);
-  drawGlowText(100, 100, "WiFi Connected!", NEON_GREEN, DARK_CYBER);
-  vga.setTextColor(NEON_BLUE, DARK_CYBER);
-  vga.setCursor(60, 130); vga.print("SSID: "); vga.print(WiFi.SSID().c_str());
-  vga.setCursor(60, 148); vga.print("IP:   "); vga.print(WiFi.localIP().toString().c_str());
+   // Connected splash
+  vga.clear(C_BLUE);
+  vga.fillRect(0, 0, 400, 4, C_YELLOW);
+  vga.fillRect(60, 90, 280, 110, C_BLACK);
+  drawBox(60, 90, 280, 110, C_CYAN);
+  vga.fillRect(60, 90, 280, 3, C_GREEN);
+
+  centerText(110, "WiFi Connected",                    C_GREEN, C_BLACK);
+  centerText(130, WiFi.SSID().c_str(),                 C_WHITE, C_BLACK);
+  centerText(148, WiFi.localIP().toString().c_str(),   C_CYAN,  C_BLACK);
   delay(1500);
 
   client.setServer(mqttServer, mqttPort);
   client.setBufferSize(512);
   client.setCallback(onMessage);
 
-  showLoading("Connecting to MQTT...");
+   // MQTT splash
+  vga.clear(C_BLUE);
+  vga.fillRect(0, 0, 400, 4, C_YELLOW);
+  vga.fillRect(60, 110, 280, 70, C_BLACK);
+  drawBox(60, 110, 280, 70, C_CYAN);
+  vga.fillRect(60, 110, 280, 3, C_CYAN);
+  centerText(130, "Connecting to MQTT...", C_WHITE, C_BLACK);
+  centerText(148, "broker.hivemq.com",     C_CYAN,  C_BLACK);
   connectMQTT();
   delay(500);
-
-  showLoading("Loading announcements...");
+ showCredits();
   fetchAnnouncements();
-
-  showLoading("Loading years...");
   fetchYears();
 
+ 
   drawMenu();
   Serial.println("[SETUP] Ready!");
 }
@@ -2216,15 +2107,12 @@ void setup() {
 void loop() {
   if (!client.connected() && WiFi.status() == WL_CONNECTED) connectMQTT();
   if (client.connected()) client.loop();
-
   handleButtons();
-  updatePulse();
 
   if (millis() - lastAnnFetch > ANN_FETCH_INTERVAL) {
     lastAnnFetch = millis();
-    if (currentState == MENU && WiFi.status() == WL_CONNECTED) {
+    if (currentState == MENU && WiFi.status() == WL_CONNECTED)
       fetchAnnouncements();
-    }
   }
 
   if (millis() - lastWiFiCheck > WIFI_CHECK_INTERVAL) {
