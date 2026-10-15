@@ -89,6 +89,27 @@ mqttClient.on('error', (err) => {
   console.log('❌ MQTT Error:', err);
 });
 
+// Preserve the existing broker, topic, payload format, QoS and retained
+// behavior. MQTT.js queues QoS 1 messages while reconnecting, so a temporary
+// broker outage must not make a completed database operation look like it
+// failed to the user.
+function publishNotice(payload, options, label) {
+  const connectedAtPublish = mqttClient.connected;
+  try {
+    mqttClient.publish('department/notices', payload, options, (err) => {
+      if (err) {
+        console.log(`❌ MQTT ${label} publish error:`, err.message);
+      } else {
+        console.log(`📡 ✅ MQTT ${label} published${connectedAtPublish ? '' : ' after reconnect'}`);
+      }
+    });
+  } catch (err) {
+    console.log(`❌ MQTT ${label} queue error:`, err.message);
+    return false;
+  }
+  return connectedAtPublish;
+}
+
 // ========================================
 // AUTHENTICATION ROUTE
 // ========================================
@@ -421,7 +442,7 @@ app.post('/announcements/approve/:id', (req, res) => {
 
     const notice = results[0];
     db.query(
-      'UPDATE announcements SET status = "approved" WHERE announcement_id = ?',
+      "UPDATE announcements SET status = 'approved' WHERE announcement_id = ?",
       [id],
       (err) => {
         if (err) return res.json({ success: false, message: '❌ Error approving' });
@@ -434,14 +455,16 @@ app.post('/announcements/approve/:id', (req, res) => {
           category: notice.category,
           timestamp: new Date().toISOString()
         });
-        // Use retain: true to persist message on broker
-        mqttClient.publish('department/notices', payload, { retain: true, qos: 1 }, (err) => {
-          if (err) {
-            console.log('❌ MQTT publish error:', err);
-            return res.json({ success: false, message: '❌ Failed to send to display' });
-          }
-          console.log('📡 ✅ Announcement published & retained on MQTT');
-          res.json({ success: true, message: '✅ Approved and sent to display!' });
+        // Keep the existing retained QoS 1 message. Approval is complete once
+        // the database update succeeds; MQTT will deliver the queued message
+        // when a temporary broker connection is restored.
+        const deliveredNow = publishNotice(payload, { retain: true, qos: 1 }, 'announcement');
+        res.json({
+          success: true,
+          message: deliveredNow
+            ? '✅ Approved and sent to display!'
+            : '✅ Approved. The display update is queued until MQTT reconnects.',
+          mqtt_pending: !deliveredNow
         });
       }
     );

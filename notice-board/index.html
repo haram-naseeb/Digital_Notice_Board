@@ -164,8 +164,9 @@
         const data = await res.json();
         showToast(data.success ? 'Announcement approved and sent to display' : (data.message || 'Approval failed'), data.success ? 'success' : 'error');
         loadDashboard();
-      } catch {
-        showToast('Failed to approve announcement', 'error');
+      } catch (err) {
+        console.error('Approval request failed:', err);
+        showToast('Approval request could not reach the server. Check the server terminal.', 'error');
       }
     }
 

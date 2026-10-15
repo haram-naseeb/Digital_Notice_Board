@@ -230,8 +230,9 @@
           data.success ? 'success' : 'error'
         );
         loadAnnouncements();
-      } catch {
-        showToast('Failed to approve', 'error');
+      } catch (err) {
+        console.error('Approval request failed:', err);
+        showToast('Approval request could not reach the server. Check the server terminal.', 'error');
       }
     }
 

@@ -149,7 +149,10 @@ window.checkAuth = function (requiredRole = null) {
   try {
     const user = JSON.parse(userStr);
 
-    if (!user.username || !user.role) {
+    // Sessions created before server-side authorization did not include a
+    // token. Treat them as signed out instead of showing controls that the
+    // backend will correctly reject.
+    if (!user.username || !user.role || !user.token) {
       throw new Error('Invalid user object');
     }
 
