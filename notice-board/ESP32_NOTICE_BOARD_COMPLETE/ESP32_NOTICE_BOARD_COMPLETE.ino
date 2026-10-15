@@ -94,7 +94,8 @@ HMUfpIBvFSDJ3gyICh3WZlXi/EjJKSZp4A==
 -----END CERTIFICATE-----
 )EOF";
 
-const unsigned long HTTPS_TIMEOUT_MS = 30000;
+// Free Render services can need time to wake after inactivity.
+const unsigned long HTTPS_TIMEOUT_MS = 60000;
 
 String apiUrl(const String& path) {
   return String("https://") + apiHost + path;
