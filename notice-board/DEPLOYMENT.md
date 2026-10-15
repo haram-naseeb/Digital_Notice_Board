@@ -87,7 +87,7 @@ trusted for authorization. The backend enforces these permissions:
 
 Existing public read endpoints stay available for the installed ESP32 firmware.
 
-## ESP32 and MQTT limitations
+## ESP32 cloud access and MQTT
 
 No MQTT broker, topic, client, QoS, retention setting, payload format, or
 firmware MQTT setting was changed. The public HiveMQ broker has no
@@ -96,14 +96,24 @@ user could publish to the same public topic. It also uses one retained value
 per topic. A local and cloud backend running at the same time share the fixed
 server MQTT client ID and should be avoided.
 
-The existing firmware's HTTP integration still points to `192.168.0.112:3000`
-over plain HTTP. It will continue to work against a local server. To make its
-HTTP timetable/announcement/office reads use Render, it must be deliberately
-updated to use HTTPS with `WiFiClientSecure`, certificate validation using the
-Render certificate chain/root CA, and the Render hostname. This deployment
-preparation does not make that firmware change, because it would alter the
-current working device network behavior. MQTT continues working independently
-with its present HiveMQ settings.
+The firmware now uses `https://knotify-api-bv4i.onrender.com` for its approved
+announcement refresh, timetable, sessions, sections, and office-directory
+requests. This makes those features work from any Wi-Fi network with internet
+access; the local Node server and fixed LAN IP are no longer required for the
+ESP32.
+
+It uses `WiFiClientSecure`, synchronizes its clock with NTP before requests,
+and verifies the current Render TLS chain using the embedded GlobalSign root
+certificate. It never calls `setInsecure()`. Install/update the **ESP32 by
+Espressif Systems** board package in Arduino IDE so `WiFiClientSecure` is
+available, upload `ESP32_NOTICE_BOARD_COMPLETE.ino`, and check the Serial
+Monitor for TLS or NTP errors after upload. Render can replace its certificate
+chain in the future; if HTTPS starts failing while the API works in a browser,
+verify the new chain and update the embedded root certificate.
+
+After uploading the cloud firmware, stop the local `npm start` server. Keep
+the existing MQTT broker, topic, payloads, QoS and retained-message behavior
+unchanged. The public broker limitations described above still apply.
 
 ## Operational behavior
 

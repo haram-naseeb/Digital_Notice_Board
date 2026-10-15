@@ -7,8 +7,10 @@
 #include <ESP32Lib.h>
 #include <Ressources/Font6x8.h>
 #include <HTTPClient.h>
+#include <WiFiClientSecure.h>
 #include <ESPmDNS.h>
 #include <Preferences.h>
+#include <time.h>
 Preferences prefs;
 // ================= FORWARD DECLARATIONS =================
 struct Announcement;
@@ -56,12 +58,65 @@ const int yellowLED = 5;
 
 VGA3Bit vga;
 
-WiFiClient   httpClient;
+WiFiClientSecure httpClient;
 WiFiClient   mqttClient;
 PubSubClient client(mqttClient);
 
-// ================= MULTI-NETWORK HTTP CONFIG =================
-const char* serverIP = "192.168.0.112";
+// ================= CLOUD HTTPS API CONFIG =================
+// Certificate-verified cloud API. This replaces the local LAN IP so the
+// timetable, office directory, and HTTP announcement refresh work anywhere.
+const char* apiHost = "knotify-api-bv4i.onrender.com";
+const uint16_t apiPort = 443;
+
+// Root certificate from the currently verified Render TLS chain. Do not use
+// setInsecure(); replace this certificate only after verifying a future chain.
+static const char RENDER_ROOT_CA[] PROGMEM = R"EOF(
+-----BEGIN CERTIFICATE-----
+MIIDdTCCAl2gAwIBAgILBAAAAAABFUtaw5QwDQYJKoZIhvcNAQEFBQAwVzELMAkG
+A1UEBhMCQkUxGTAXBgNVBAoTEEdsb2JhbFNpZ24gbnYtc2ExEDAOBgNVBAsTB1Jv
+b3QgQ0ExGzAZBgNVBAMTEkdsb2JhbFNpZ24gUm9vdCBDQTAeFw05ODA5MDExMjAw
+MDBaFw0yODAxMjgxMjAwMDBaMFcxCzAJBgNVBAYTAkJFMRkwFwYDVQQKExBHbG9i
+YWxTaWduIG52LXNhMRAwDgYDVQQLEwdSb290IENBMRswGQYDVQQDExJHbG9iYWxT
+aWduIFJvb3QgQ0EwggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQDaDuaZ
+jc6j40+Kfvvxi4Mla+pIH/EqsLmVEQS98GPR4mdmzxzdzxtIK+6NiY6arymAZavp
+xy0Sy6scTHAHoT0KMM0VjU/43dSMUBUc71DuxC73/OlS8pF94G3VNTCOXkNz8kHp
+1Wrjsok6Vjk4bwY8iGlbKk3Fp1S4bInMm/k8yuX9ifUSPJJ4ltbcdG6TRGHRjcdG
+snUOhugZitVtbNV4FpWi6cgKOOvyJBNPc1STE4U6G7weNLWLBYy5d4ux2x8gkasJ
+U26Qzns3dLlwR5EiUWMWea6xrkEmCMgZK9FGqkjWZCrXgzT/LCrBbBlDSgeF59N8
+9iFo7+ryUp9/k5DPAgMBAAGjQjBAMA4GA1UdDwEB/wQEAwIBBjAPBgNVHRMBAf8E
+BTADAQH/MB0GA1UdDgQWBBRge2YaRQ2XyolQL30EzTSo//z9SzANBgkqhkiG9w0B
+AQUFAAOCAQEA1nPnfE920I2/7LqivjTFKDK1fPxsnCwrvQmeU79rXqoRSLblCKOz
+yj1hTdNGCbM+w6DjY1Ub8rrvrTnhQ7k4o+YviiY776BQVvnGCv04zcQLcFGUl5gE
+38NflNUVyRRBnMRddWQVDf9VMOyGj/8N7yy5Y0b2qvzfvGn9LhJIZJrglfCm7ymP
+AbEVtQwdpf5pLGkkeB6zpxxxYu7KyJesF12KwvhHhm4qxFYxldBniYUr+WymXUad
+DKqC5JlR3XC321Y9YeRq4VzW9v493kHMB65jUr9TU/Qr6cf9tveCX4XSQRjbgbME
+HMUfpIBvFSDJ3gyICh3WZlXi/EjJKSZp4A==
+-----END CERTIFICATE-----
+)EOF";
+
+const unsigned long HTTPS_TIMEOUT_MS = 30000;
+
+String apiUrl(const String& path) {
+  return String("https://") + apiHost + path;
+}
+
+void configureSecureClient(WiFiClientSecure& secureClient) {
+  secureClient.setCACert(RENDER_ROOT_CA);
+  secureClient.setTimeout(HTTPS_TIMEOUT_MS / 1000);
+}
+
+bool syncClockForTls() {
+  configTime(0, 0, "time.google.com", "pool.ntp.org");
+  struct tm timeinfo;
+  unsigned long started = millis();
+  while (!getLocalTime(&timeinfo, 1000)) {
+    if (millis() - started > 15000) {
+      Serial.println("NTP time sync failed; HTTPS certificate validation cannot start");
+      return false;
+    }
+  }
+  return true;
+}
 
 // ================= 8 VGA COLORS =================
 // VGA3Bit only outputs 8 real colors — all vga.RGB() calls quantize to these.
@@ -512,8 +567,9 @@ void pruneNotifiedFlash() {
 void fetchAnnouncements() {
   if (WiFi.status() != WL_CONNECTED) return;
   HTTPClient http;
-  String url = String("http://") + serverIP + ":3000/announcements/approved/all";
+  String url = apiUrl("/announcements/approved/all");
   if (!http.begin(httpClient, url)) return;
+  http.setConnectTimeout(HTTPS_TIMEOUT_MS); http.setTimeout(HTTPS_TIMEOUT_MS);
   int code = http.GET();
   if (code == 200) {
     String payload = http.getString();
@@ -541,9 +597,9 @@ void fetchAnnouncements() {
 void fetchYears() {
   if (WiFi.status() != WL_CONNECTED) return;
   HTTPClient http;
-  String url = String("http://") + serverIP + ":3000/years";
+  String url = apiUrl("/years");
   if (!http.begin(httpClient, url)) return;
-  http.setConnectTimeout(5000); http.setTimeout(10000);
+  http.setConnectTimeout(HTTPS_TIMEOUT_MS); http.setTimeout(HTTPS_TIMEOUT_MS);
   if (http.GET() == 200) {
     DynamicJsonDocument doc(1024);
     if (!deserializeJson(doc, http.getString())) {
@@ -563,9 +619,9 @@ void fetchYears() {
 void fetchSessions(int yearId) {
   if (WiFi.status() != WL_CONNECTED) return;
   HTTPClient http;
-  String url = String("http://") + serverIP + ":3000/sessions/" + yearId;
+  String url = apiUrl(String("/sessions/") + yearId);
   if (!http.begin(httpClient, url)) return;
-  http.setConnectTimeout(5000); http.setTimeout(10000);
+  http.setConnectTimeout(HTTPS_TIMEOUT_MS); http.setTimeout(HTTPS_TIMEOUT_MS);
   if (http.GET() == 200) {
     DynamicJsonDocument doc(2048);
     if (!deserializeJson(doc, http.getString())) {
@@ -585,9 +641,9 @@ void fetchSessions(int yearId) {
 void fetchSections(int sessionId) {
   if (WiFi.status() != WL_CONNECTED) return;
   HTTPClient http;
-  String url = String("http://") + serverIP + ":3000/sections/" + sessionId;
+  String url = apiUrl(String("/sections/") + sessionId);
   if (!http.begin(httpClient, url)) return;
-  http.setConnectTimeout(5000); http.setTimeout(10000);
+  http.setConnectTimeout(HTTPS_TIMEOUT_MS); http.setTimeout(HTTPS_TIMEOUT_MS);
   if (http.GET() == 200) {
     DynamicJsonDocument doc(1024);
     if (!deserializeJson(doc, http.getString())) {
@@ -620,9 +676,9 @@ void fetchTimetable(int yIdx, int sIdx, int secIdx) {
   int sessionId = sessions[sIdx].id;
   int sectionId = sections[secIdx].id;
 
-  WiFiClient timetableClient;
+  WiFiClientSecure timetableClient;
   String path = String("/timetable/") + yearId + "/" + sessionId + "/" + sectionId;
-  String url  = String("http://") + serverIP + ":3000" + path;
+  String url  = apiUrl(path);
 
   Serial.println("================ TIMETABLE FETCH ================");
   Serial.print("Selected year: ");    Serial.print(yearId);    Serial.print(" ("); Serial.print(years[yIdx].name);       Serial.println(")");
@@ -630,19 +686,21 @@ void fetchTimetable(int yIdx, int sIdx, int secIdx) {
   Serial.print("Selected section: "); Serial.print(sectionId); Serial.print(" ("); Serial.print(sections[secIdx].name);  Serial.println(")");
   Serial.print("URL: "); Serial.println(url);
 
-  if (!timetableClient.connect(serverIP, 3000)) {
+  configureSecureClient(timetableClient);
+  if (!timetableClient.connect(apiHost, apiPort)) {
+    Serial.println("HTTPS connection to cloud API failed");
     currentTT.count = 0;
     return;
   }
 
-  timetableClient.setTimeout(10000);
-  timetableClient.print(String("GET ") + path + " HTTP/1.0\r\n");
-  timetableClient.print(String("Host: ") + serverIP + "\r\n");
+  timetableClient.setTimeout(HTTPS_TIMEOUT_MS / 1000);
+  timetableClient.print(String("GET ") + path + " HTTP/1.1\r\n");
+  timetableClient.print(String("Host: ") + apiHost + "\r\n");
   timetableClient.print("Connection: close\r\n");
   timetableClient.print("Accept: application/json\r\n\r\n");
 
   unsigned long startWait = millis();
-  while (!timetableClient.available() && millis() - startWait < 10000) delay(10);
+  while (!timetableClient.available() && millis() - startWait < HTTPS_TIMEOUT_MS) delay(10);
 
   String statusLine = timetableClient.readStringUntil('\n');
   statusLine.trim();
@@ -682,7 +740,7 @@ void fetchTimetable(int yIdx, int sIdx, int secIdx) {
   if (contentLength > 0) payload.reserve(contentLength + 1);
 
   unsigned long lastRead = millis();
-  while ((timetableClient.connected() || timetableClient.available()) && millis() - lastRead < 10000) {
+  while ((timetableClient.connected() || timetableClient.available()) && millis() - lastRead < HTTPS_TIMEOUT_MS) {
     while (timetableClient.available()) {
       payload += (char)timetableClient.read();
       lastRead = millis();
@@ -756,9 +814,9 @@ void fetchOfficeTeachers(const char* floor) {
   for (int i = 0; i < OFFICE_ROOM_COUNT; i++) strncpy(officeTeacher[i], "----", 31);
   officeTeacherLoaded = 0;
   HTTPClient http;
-  String url = String("http://") + serverIP + ":3000/offices";
+  String url = apiUrl("/offices");
   if (!http.begin(httpClient, url)) return;
-  http.setConnectTimeout(5000); http.setTimeout(10000);
+  http.setConnectTimeout(HTTPS_TIMEOUT_MS); http.setTimeout(HTTPS_TIMEOUT_MS);
   int code = http.GET();
   if (code != 200) { http.end(); return; }
   String payload = http.getString();
@@ -790,9 +848,9 @@ void fetchFirstFloorTeachers() {
   for (int i = 0; i < CABIN2_ROOM_COUNT;   i++) strncpy(cabin2Teacher[i],        "----", 31);
   for (int i = 0; i < CABIN3_ROOM_COUNT;   i++) strncpy(cabin3Teacher[i],        "----", 31);
   HTTPClient http;
-  String url = String("http://") + serverIP + ":3000/offices";
+  String url = apiUrl("/offices");
   if (!http.begin(httpClient, url)) return;
-  http.setConnectTimeout(5000); http.setTimeout(10000);
+  http.setConnectTimeout(HTTPS_TIMEOUT_MS); http.setTimeout(HTTPS_TIMEOUT_MS);
   int code = http.GET();
   if (code != 200) { http.end(); return; }
   String payload = http.getString();
@@ -2061,6 +2119,10 @@ void setup() {
   if (WiFi.waitForConnectResult(15000) != WL_CONNECTED) {
     wifiManager.setConfigPortalTimeout(0);
     wifiManager.autoConnect("NoticeBoardSetup");
+  }
+  configureSecureClient(httpClient);
+  if (!syncClockForTls()) {
+    Serial.println("Cloud HTTP features will retry after Wi-Fi reconnects");
   }
   MDNS.begin("esp32board");
 
