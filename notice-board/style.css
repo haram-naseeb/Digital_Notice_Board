@@ -272,6 +272,13 @@ body {
   flex-shrink: 0;
 }
 
+/* Mobile navigation controls are enabled only at phone widths. */
+.mobile-nav-toggle,
+.mobile-sidebar-close,
+.mobile-nav-overlay {
+  display: none;
+}
+
 /* Main content */
 .main {
   margin-left: var(--sidebar-w);
@@ -1006,8 +1013,70 @@ td.empty-row {
 
 @media (max-width: 700px) {
   :root { --sidebar-w: 0px; }
-  .sidebar { display: none; }
-  .main { margin-left: 0; }
+  .sidebar {
+    display: flex;
+    width: min(82vw, 300px);
+    transform: translateX(-105%);
+    transition: transform 0.25s ease;
+    z-index: 1100;
+  }
+  .sidebar.mobile-open { transform: translateX(0); }
+  .mobile-nav-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    position: fixed;
+    top: 12px;
+    left: 12px;
+    z-index: 1101;
+    min-height: 42px;
+    padding: 0 13px;
+    border: 0;
+    border-radius: 9px;
+    background: var(--primary);
+    color: #fff;
+    font: inherit;
+    font-weight: 700;
+    cursor: pointer;
+    box-shadow: 0 4px 14px rgba(30, 58, 138, 0.3);
+  }
+  .mobile-nav-toggle svg { width: 19px; height: 19px; }
+  .mobile-sidebar-close {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    position: absolute;
+    top: 11px;
+    right: 10px;
+    width: 34px;
+    height: 34px;
+    border: 0;
+    border-radius: 7px;
+    background: rgba(255,255,255,0.12);
+    color: #fff;
+    cursor: pointer;
+  }
+  .mobile-sidebar-close svg { width: 20px; height: 20px; }
+  .mobile-nav-overlay {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 1050;
+    width: 100%;
+    border: 0;
+    background: rgba(15, 23, 42, 0.48);
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity 0.25s ease, visibility 0.25s ease;
+  }
+  .mobile-nav-overlay.is-visible {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+  }
+  body.mobile-nav-open { overflow: hidden; }
+  .main { margin-left: 0; padding-top: 70px; }
   .stats { grid-template-columns: 1fr 1fr; }
   .form-grid,
   .form-grid.cols-3,

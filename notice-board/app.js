@@ -186,6 +186,57 @@ window.getCurrentUser = function () {
   }
 };
 
+/** Open or close the navigation drawer used on small screens. */
+window.toggleMobileNav = function (open) {
+  const sidebar = document.getElementById('sidebar-container');
+  const overlay = document.getElementById('mobile-nav-overlay');
+  const toggle = document.getElementById('mobile-nav-toggle');
+  if (!sidebar) return;
+
+  const shouldOpen = typeof open === 'boolean'
+    ? open
+    : !sidebar.classList.contains('mobile-open');
+
+  sidebar.classList.toggle('mobile-open', shouldOpen);
+  document.body.classList.toggle('mobile-nav-open', shouldOpen);
+  if (overlay) overlay.classList.toggle('is-visible', shouldOpen);
+  if (toggle) toggle.setAttribute('aria-expanded', String(shouldOpen));
+};
+
+function setupMobileNavigation() {
+  let toggle = document.getElementById('mobile-nav-toggle');
+  if (!toggle) {
+    toggle = document.createElement('button');
+    toggle.id = 'mobile-nav-toggle';
+    toggle.className = 'mobile-nav-toggle';
+    toggle.type = 'button';
+    toggle.setAttribute('aria-label', 'Open navigation menu');
+    toggle.setAttribute('aria-controls', 'sidebar-container');
+    toggle.setAttribute('aria-expanded', 'false');
+    toggle.innerHTML = '<i data-lucide="menu"></i><span>Menu</span>';
+    toggle.addEventListener('click', () => toggleMobileNav());
+    document.body.appendChild(toggle);
+  }
+
+  let overlay = document.getElementById('mobile-nav-overlay');
+  if (!overlay) {
+    overlay = document.createElement('button');
+    overlay.id = 'mobile-nav-overlay';
+    overlay.className = 'mobile-nav-overlay';
+    overlay.type = 'button';
+    overlay.setAttribute('aria-label', 'Close navigation menu');
+    overlay.addEventListener('click', () => toggleMobileNav(false));
+    document.body.appendChild(overlay);
+  }
+
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') toggleMobileNav(false);
+  });
+  window.addEventListener('resize', () => {
+    if (window.innerWidth > 700) toggleMobileNav(false);
+  });
+}
+
 /**
  * Dynamically render the sidebar based on user role
  * @param {string} activeHref - The current page filename (e.g., 'index.html')
@@ -230,6 +281,9 @@ window.renderSidebar = function (activeHref) {
     : 'background:rgba(252,211,77,0.2);color:#fcd34d;border:1px solid rgba(252,211,77,0.3);';
 
   const sidebarHtml = `
+    <button class="mobile-sidebar-close" type="button" aria-label="Close navigation menu" onclick="toggleMobileNav(false)">
+      <i data-lucide="x"></i>
+    </button>
     <a class="sidebar-brand" href="index.html">
       <div class="sidebar-logos">
         <img src="uet_cs_logo.jpg" alt="CS">
@@ -257,6 +311,10 @@ window.renderSidebar = function (activeHref) {
   if (container) {
     container.innerHTML = sidebarHtml;
     container.className = 'sidebar';
+    container.querySelectorAll('a').forEach((link) => {
+      link.addEventListener('click', () => toggleMobileNav(false));
+    });
+    setupMobileNavigation();
     if (window.lucide) lucide.createIcons();
   }
 };
