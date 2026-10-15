@@ -566,16 +566,28 @@ void pruneNotifiedFlash() {
 // HTTP FUNCTIONS
 // ========================================
 void fetchAnnouncements() {
-  if (WiFi.status() != WL_CONNECTED) return;
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("[CLOUD] Announcement refresh skipped: Wi-Fi unavailable");
+    return;
+  }
   HTTPClient http;
   String url = apiUrl("/announcements/approved/all");
-  if (!http.begin(httpClient, url)) return;
+  Serial.print("[CLOUD] Fetching announcements: "); Serial.println(url);
+  if (!http.begin(httpClient, url)) {
+    Serial.println("[CLOUD] Announcement HTTPS setup failed");
+    return;
+  }
   http.setConnectTimeout(HTTPS_TIMEOUT_MS); http.setTimeout(HTTPS_TIMEOUT_MS);
   int code = http.GET();
   if (code == 200) {
     String payload = http.getString();
     DynamicJsonDocument doc(4096);
-    if (deserializeJson(doc, payload)) { http.end(); return; }
+    DeserializationError error = deserializeJson(doc, payload);
+    if (error) {
+      Serial.print("[CLOUD] Announcement JSON error: "); Serial.println(error.c_str());
+      http.end();
+      return;
+    }
     clearAllCategories();
     for (JsonObject ann : doc.as<JsonArray>()) {
       int         annId    = ann["announcement_id"] | 0;
@@ -591,6 +603,11 @@ void fetchAnnouncements() {
     updateLEDs();
     pruneNotifiedFlash();
     if (currentState == MENU) drawMenu();
+    Serial.print("[CLOUD] Announcements loaded — urgent: "); Serial.print(urgent.count);
+    Serial.print(", general: "); Serial.print(general.count);
+    Serial.print(", event: "); Serial.println(eventCat.count);
+  } else {
+    Serial.print("[CLOUD] Announcement request failed, HTTP code: "); Serial.println(code);
   }
   http.end();
 }
