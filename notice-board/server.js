@@ -70,7 +70,9 @@ console.log('✅ MySQL connection pool created (limit: 10 connections)!');
 const mqttClient = mqtt.connect('mqtt://broker.hivemq.com:1883', {
   reconnectPeriod: 5000,
   connectTimeout: 10000,
-  clientId: 'notice_board_server'
+  // Keep the existing default for local ESP32 use. Render must set a distinct
+  // MQTT_CLIENT_ID so its connection does not evict the local server.
+  clientId: process.env.MQTT_CLIENT_ID || 'notice_board_server'
 });
 
 mqttClient.on('connect', () => {
