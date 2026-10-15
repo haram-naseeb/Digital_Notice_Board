@@ -8,7 +8,6 @@
 #include <Ressources/Font6x8.h>
 #include <HTTPClient.h>
 #include <WiFiClientSecure.h>
-#include <ESPmDNS.h>
 #include <Preferences.h>
 #include <time.h>
 Preferences prefs;
@@ -29,6 +28,7 @@ unsigned long lastWiFiCheck   = 0;
 const unsigned long WIFI_CHECK_INTERVAL = 10000;
 
 // ================= MQTT (HiveMQ Broker) =================
+// UNCHANGED from the OLD firmware: plain MQTT, no TLS, no auth.
 const char* mqttServer = "broker.hivemq.com";
 const int   mqttPort   = 1883;
 
@@ -58,18 +58,35 @@ const int yellowLED = 5;
 
 VGA3Bit vga;
 
-WiFiClientSecure httpClient;
-WiFiClient   mqttClient;
+WiFiClientSecure httpClient;     // used for ALL cloud HTTPS requests
+WiFiClient       mqttClient;     // plain TCP for MQTT (unchanged)
 PubSubClient client(mqttClient);
 
 // ================= CLOUD HTTPS API CONFIG =================
-// Certificate-verified cloud API. This replaces the local LAN IP so the
-// timetable, office directory, and HTTP announcement refresh work anywhere.
-const char* apiHost = "knotify-api-bv4i.onrender.com";
+// Base URL: https://knotify-api-bv4i.onrender.com  (port 443)
+// The hostname is always used (never an IP) so TLS SNI and certificate
+// name validation work. setInsecure() is NEVER used.
+const char*    apiHost = "knotify-api-bv4i.onrender.com";
 const uint16_t apiPort = 443;
 
-// Root certificate from the currently verified Render TLS chain. Do not use
-// setInsecure(); replace this certificate only after verifying a future chain.
+// Free Render services can take 30-50 s to wake after inactivity.
+// NOTE: HTTPClient::setTimeout() takes uint16_t on some cores, so keep <= 65535.
+const unsigned long HTTPS_TIMEOUT_MS = 60000;
+
+// ---- Certificate verification ----
+// USE_CA_BUNDLE = 1 : verify against the ESP32 core's built-in Mozilla root
+//                     certificate bundle (recommended: Render sits behind
+//                     Cloudflare, which can rotate between CAs).
+// USE_CA_BUNDLE = 0 : verify against the single pinned root below
+//                     (GlobalSign Root CA). Use only if your core has no bundle API.
+#define USE_CA_BUNDLE 0
+
+#if USE_CA_BUNDLE
+extern const uint8_t rootca_crt_bundle_start[] asm("_binary_x509_crt_bundle_start");
+#if defined(ESP_ARDUINO_VERSION_MAJOR) && (ESP_ARDUINO_VERSION_MAJOR >= 3)
+extern const uint8_t rootca_crt_bundle_end[] asm("_binary_x509_crt_bundle_end");
+#endif
+#else
 static const char RENDER_ROOT_CA[] PROGMEM = R"EOF(
 -----BEGIN CERTIFICATE-----
 MIIDdTCCAl2gAwIBAgILBAAAAAABFUtaw5QwDQYJKoZIhvcNAQEFBQAwVzELMAkG
@@ -93,30 +110,123 @@ DKqC5JlR3XC321Y9YeRq4VzW9v493kHMB65jUr9TU/Qr6cf9tveCX4XSQRjbgbME
 HMUfpIBvFSDJ3gyICh3WZlXi/EjJKSZp4A==
 -----END CERTIFICATE-----
 )EOF";
+#endif
 
-// Free Render services can need time to wake after inactivity.
-const unsigned long HTTPS_TIMEOUT_MS = 60000;
+// Any epoch earlier than this means the clock has not been set by NTP yet.
+const time_t MIN_VALID_EPOCH = 1700000000;
 
 String apiUrl(const String& path) {
   return String("https://") + apiHost + path;
 }
 
 void configureSecureClient(WiFiClientSecure& secureClient) {
+#if USE_CA_BUNDLE
+  #if defined(ESP_ARDUINO_VERSION_MAJOR) && (ESP_ARDUINO_VERSION_MAJOR >= 3)
+  secureClient.setCACertBundle(rootca_crt_bundle_start, rootca_crt_bundle_end - rootca_crt_bundle_start);
+  #else
+  secureClient.setCACertBundle(rootca_crt_bundle_start);
+  #endif
+#else
   secureClient.setCACert(RENDER_ROOT_CA);
-  secureClient.setTimeout(HTTPS_TIMEOUT_MS / 1000);
+#endif
+  secureClient.setTimeout(HTTPS_TIMEOUT_MS / 1000);   // seconds
 }
 
+// TLS certificates have validity dates, so the clock MUST be correct first.
 bool syncClockForTls() {
-  configTime(0, 0, "time.google.com", "pool.ntp.org");
+  Serial.println("[NTP] Syncing clock (required for HTTPS certificate validation)...");
+  configTime(0, 0, "time.google.com", "pool.ntp.org", "time.cloudflare.com");
   struct tm timeinfo;
   unsigned long started = millis();
   while (!getLocalTime(&timeinfo, 1000)) {
     if (millis() - started > 15000) {
-      Serial.println("NTP time sync failed; HTTPS certificate validation cannot start");
+      Serial.println("[NTP] ERROR: time sync failed; HTTPS certificate validation cannot succeed");
       return false;
     }
   }
+  Serial.printf("[NTP] Time synced: %04d-%02d-%02d %02d:%02d:%02d UTC\n",
+                timeinfo.tm_year + 1900, timeinfo.tm_mon + 1, timeinfo.tm_mday,
+                timeinfo.tm_hour, timeinfo.tm_min, timeinfo.tm_sec);
   return true;
+}
+
+bool ensureTimeSynced() {
+  if (time(nullptr) > MIN_VALID_EPOCH) return true;
+  return syncClockForTls();
+}
+
+// -----------------------------------------------------------------------
+// Single place where every cloud request goes through.
+// - verifies the TLS certificate (bundle or pinned root)
+// - makes sure NTP time is valid first
+// - one connection per request (no keep-alive reuse; stops TLS memory leaking)
+// - HTTPClient decodes chunked responses (the old raw HTTP/1.1 reader could not)
+// - retries, because a sleeping free Render service may time out once
+// -----------------------------------------------------------------------
+bool cloudGet(const char* path, String& payload, int attempts = 2) {
+  payload = "";
+
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("[CLOUD] ERROR: Wi-Fi not connected; request skipped");
+    return false;
+  }
+  if (!ensureTimeSynced()) {
+    Serial.println("[TLS] ERROR: clock not set, HTTPS request skipped");
+    return false;
+  }
+
+  String url = apiUrl(path);
+
+  for (int attempt = 1; attempt <= attempts; attempt++) {
+    Serial.print("[CLOUD] GET "); Serial.print(url);
+    Serial.printf(" (attempt %d/%d, port %u, free heap %u, max block %u)\n",
+                  attempt, attempts, apiPort, (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getMaxAllocHeap());
+
+    httpClient.stop();
+    configureSecureClient(httpClient);
+
+    HTTPClient http;
+    http.setReuse(false);
+    http.setConnectTimeout(HTTPS_TIMEOUT_MS);
+    http.setTimeout(HTTPS_TIMEOUT_MS);
+
+    if (!http.begin(httpClient, url)) {
+      Serial.println("[CLOUD] ERROR: HTTPClient.begin() failed (bad URL?)");
+      httpClient.stop();
+      return false;
+    }
+    http.addHeader("Accept", "application/json");
+
+    int code = http.GET();
+
+    if (code == 200) {
+      payload = http.getString();
+      http.end();
+      httpClient.stop();
+      Serial.printf("[CLOUD] HTTP 200 OK, %u bytes from %s\n", (unsigned)payload.length(), path);
+      if (payload.length() > 0) return true;
+      Serial.println("[CLOUD] ERROR: empty response body");
+    } else if (code > 0) {
+      Serial.printf("[CLOUD] ERROR: HTTP status %d for %s\n", code, path);
+      http.end();
+      httpClient.stop();
+    } else {
+      Serial.printf("[CLOUD] ERROR: request failed (%d: %s) for %s\n", code, http.errorToString(code).c_str(), path);
+      char tlsErr[128] = {0};
+      int tlsCode = httpClient.lastError(tlsErr, sizeof(tlsErr));
+      if (tlsCode != 0) {
+        Serial.printf("[TLS] ERROR: mbedTLS code %d: %s\n", tlsCode, tlsErr);
+      }
+      http.end();
+      httpClient.stop();
+    }
+
+    if (attempt < attempts) {
+      Serial.println("[CLOUD] Retrying in 1.5 s...");
+      delay(1500);
+    }
+  }
+  return false;
 }
 
 // ================= 8 VGA COLORS =================
@@ -563,119 +673,109 @@ void pruneNotifiedFlash() {
   }
 }
 // ========================================
-// HTTP FUNCTIONS
+// CLOUD HTTPS FUNCTIONS
 // ========================================
-void fetchAnnouncements() {
-  if (WiFi.status() != WL_CONNECTED) {
-    Serial.println("[CLOUD] Announcement refresh skipped: Wi-Fi unavailable");
+void fetchAnnouncements(int attempts = 2) {
+  String payload;
+  if (!cloudGet("/announcements/approved/all", payload, attempts)) {
+    Serial.println("[CLOUD] Announcement refresh failed; keeping current notices");
     return;
   }
-  HTTPClient http;
-  String url = apiUrl("/announcements/approved/all");
-  Serial.print("[CLOUD] Fetching announcements: "); Serial.println(url);
-  if (!http.begin(httpClient, url)) {
-    Serial.println("[CLOUD] Announcement HTTPS setup failed");
+
+  // Only keep the 4 fields we use, so a long list of notices still fits in RAM.
+  StaticJsonDocument<256> filter;
+  filter[0]["announcement_id"] = true;
+  filter[0]["title"]           = true;
+  filter[0]["message"]         = true;
+  filter[0]["category"]        = true;
+
+  DynamicJsonDocument doc(16384);
+  DeserializationError error = deserializeJson(doc, payload, DeserializationOption::Filter(filter));
+  payload = String();   // free the raw text
+  if (error) {
+    Serial.print("[CLOUD] Announcement JSON error: "); Serial.println(error.c_str());
     return;
   }
-  http.setConnectTimeout(HTTPS_TIMEOUT_MS); http.setTimeout(HTTPS_TIMEOUT_MS);
-  int code = http.GET();
-  if (code == 200) {
-    String payload = http.getString();
-    DynamicJsonDocument doc(4096);
-    DeserializationError error = deserializeJson(doc, payload);
-    if (error) {
-      Serial.print("[CLOUD] Announcement JSON error: "); Serial.println(error.c_str());
-      http.end();
-      return;
-    }
-    clearAllCategories();
-    for (JsonObject ann : doc.as<JsonArray>()) {
-      int         annId    = ann["announcement_id"] | 0;
-      const char* title    = ann["title"]    | "";
-      const char* message  = ann["message"]  | "";
-      const char* category = ann["category"] | "";
-      if      (strcmp(category, "urgent")  == 0) addToCategory(urgent,   annId, title, message, false);
-      else if (strcmp(category, "general") == 0) addToCategory(general,  annId, title, message, false);
-      else if (strcmp(category, "event")   == 0) addToCategory(eventCat, annId, title, message, false);
-      else if (strcmp(category, "office")  == 0) addToCategory(office,   annId, title, message, false);
-      markAnnouncementAsSeen(annId);
-    }
-    updateLEDs();
-    pruneNotifiedFlash();
-    if (currentState == MENU) drawMenu();
-    Serial.print("[CLOUD] Announcements loaded — urgent: "); Serial.print(urgent.count);
-    Serial.print(", general: "); Serial.print(general.count);
-    Serial.print(", event: "); Serial.println(eventCat.count);
-  } else {
-    Serial.print("[CLOUD] Announcement request failed, HTTP code: "); Serial.println(code);
+  if (!doc.is<JsonArray>()) {
+    Serial.println("[CLOUD] Announcement JSON error: expected an array; keeping current notices");
+    return;
   }
-  http.end();
+
+  clearAllCategories();
+  int received = 0;
+  for (JsonObject ann : doc.as<JsonArray>()) {
+    received++;
+    int         annId    = ann["announcement_id"] | 0;
+    const char* title    = ann["title"]    | "";
+    const char* message  = ann["message"]  | "";
+    const char* category = ann["category"] | "";
+    if      (strcmp(category, "urgent")  == 0) addToCategory(urgent,   annId, title, message, false);
+    else if (strcmp(category, "general") == 0) addToCategory(general,  annId, title, message, false);
+    else if (strcmp(category, "event")   == 0) addToCategory(eventCat, annId, title, message, false);
+    else if (strcmp(category, "office")  == 0) addToCategory(office,   annId, title, message, false);
+    markAnnouncementAsSeen(annId);
+  }
+  updateLEDs();
+  pruneNotifiedFlash();
+  if (currentState == MENU) drawMenu();
+
+  Serial.print("[CLOUD] Announcements received: "); Serial.println(received);
+  Serial.print("[CLOUD] Announcements loaded — urgent: "); Serial.print(urgent.count);
+  Serial.print(", general: "); Serial.print(general.count);
+  Serial.print(", event: "); Serial.println(eventCat.count);
 }
 
 void fetchYears() {
-  if (WiFi.status() != WL_CONNECTED) return;
-  HTTPClient http;
-  String url = apiUrl("/years");
-  if (!http.begin(httpClient, url)) return;
-  http.setConnectTimeout(HTTPS_TIMEOUT_MS); http.setTimeout(HTTPS_TIMEOUT_MS);
-  if (http.GET() == 200) {
-    DynamicJsonDocument doc(1024);
-    if (!deserializeJson(doc, http.getString())) {
-      totalYears = 0;
-      for (JsonObject y : doc.as<JsonArray>()) {
-        if (totalYears >= MAX_YEARS) break;
-        years[totalYears].id = y["year_id"];
-        strncpy(years[totalYears].name, y["year_name"] | "?", 9);
-        years[totalYears].name[9] = '\0';
-        totalYears++;
-      }
-    }
+  String payload;
+  if (!cloudGet("/years", payload)) { Serial.println("[CLOUD] Years request failed"); return; }
+  DynamicJsonDocument doc(2048);
+  DeserializationError error = deserializeJson(doc, payload);
+  if (error) { Serial.print("[CLOUD] Years JSON error: "); Serial.println(error.c_str()); return; }
+  totalYears = 0;
+  for (JsonObject y : doc.as<JsonArray>()) {
+    if (totalYears >= MAX_YEARS) break;
+    years[totalYears].id = y["year_id"];
+    strncpy(years[totalYears].name, y["year_name"] | "?", 9);
+    years[totalYears].name[9] = '\0';
+    totalYears++;
   }
-  http.end();
+  Serial.print("[CLOUD] Years loaded: "); Serial.println(totalYears);
 }
 
 void fetchSessions(int yearId) {
-  if (WiFi.status() != WL_CONNECTED) return;
-  HTTPClient http;
-  String url = apiUrl(String("/sessions/") + yearId);
-  if (!http.begin(httpClient, url)) return;
-  http.setConnectTimeout(HTTPS_TIMEOUT_MS); http.setTimeout(HTTPS_TIMEOUT_MS);
-  if (http.GET() == 200) {
-    DynamicJsonDocument doc(2048);
-    if (!deserializeJson(doc, http.getString())) {
-      totalSessions = 0;
-      for (JsonObject s : doc.as<JsonArray>()) {
-        if (totalSessions >= MAX_SESSIONS) break;
-        sessions[totalSessions].id = s["session_id"];
-        strncpy(sessions[totalSessions].name, s["session_name"] | "?", 39);
-        sessions[totalSessions].name[39] = '\0';
-        totalSessions++;
-      }
-    }
+  String payload;
+  String path = String("/sessions/") + yearId;
+  if (!cloudGet(path.c_str(), payload)) { Serial.println("[CLOUD] Sessions request failed"); return; }
+  DynamicJsonDocument doc(4096);
+  DeserializationError error = deserializeJson(doc, payload);
+  if (error) { Serial.print("[CLOUD] Sessions JSON error: "); Serial.println(error.c_str()); return; }
+  totalSessions = 0;
+  for (JsonObject s : doc.as<JsonArray>()) {
+    if (totalSessions >= MAX_SESSIONS) break;
+    sessions[totalSessions].id = s["session_id"];
+    strncpy(sessions[totalSessions].name, s["session_name"] | "?", 39);
+    sessions[totalSessions].name[39] = '\0';
+    totalSessions++;
   }
-  http.end();
+  Serial.print("[CLOUD] Sessions loaded: "); Serial.println(totalSessions);
 }
 
 void fetchSections(int sessionId) {
-  if (WiFi.status() != WL_CONNECTED) return;
-  HTTPClient http;
-  String url = apiUrl(String("/sections/") + sessionId);
-  if (!http.begin(httpClient, url)) return;
-  http.setConnectTimeout(HTTPS_TIMEOUT_MS); http.setTimeout(HTTPS_TIMEOUT_MS);
-  if (http.GET() == 200) {
-    DynamicJsonDocument doc(1024);
-    if (!deserializeJson(doc, http.getString())) {
-      totalSections = 0;
-      for (JsonObject s : doc.as<JsonArray>()) {
-        if (totalSections >= MAX_SECTIONS) break;
-        sections[totalSections].id = s["section_id"];
-        strncpy(sections[totalSections].name, s["section_name"] | "?", 9);
-        sections[totalSections].name[9] = '\0';
-        totalSections++;
-      }
-    }
+  String payload;
+  String path = String("/sections/") + sessionId;
+  if (!cloudGet(path.c_str(), payload)) { Serial.println("[CLOUD] Sections request failed"); return; }
+  DynamicJsonDocument doc(2048);
+  DeserializationError error = deserializeJson(doc, payload);
+  if (error) { Serial.print("[CLOUD] Sections JSON error: "); Serial.println(error.c_str()); return; }
+  totalSections = 0;
+  for (JsonObject s : doc.as<JsonArray>()) {
+    if (totalSections >= MAX_SECTIONS) break;
+    sections[totalSections].id = s["section_id"];
+    strncpy(sections[totalSections].name, s["section_name"] | "?", 9);
+    sections[totalSections].name[9] = '\0';
+    totalSections++;
   }
-  http.end();
+  Serial.print("[CLOUD] Sections loaded: "); Serial.println(totalSections);
 }
 
 void fetchTimetable(int yIdx, int sIdx, int secIdx) {
@@ -694,7 +794,6 @@ void fetchTimetable(int yIdx, int sIdx, int secIdx) {
   int sessionId = sessions[sIdx].id;
   int sectionId = sections[secIdx].id;
 
-  WiFiClientSecure timetableClient;
   String path = String("/timetable/") + yearId + "/" + sessionId + "/" + sectionId;
   String url  = apiUrl(path);
 
@@ -703,30 +802,6 @@ void fetchTimetable(int yIdx, int sIdx, int secIdx) {
   Serial.print("Selected session: "); Serial.print(sessionId); Serial.print(" ("); Serial.print(sessions[sIdx].name);    Serial.println(")");
   Serial.print("Selected section: "); Serial.print(sectionId); Serial.print(" ("); Serial.print(sections[secIdx].name);  Serial.println(")");
   Serial.print("URL: "); Serial.println(url);
-
-  configureSecureClient(timetableClient);
-  if (!timetableClient.connect(apiHost, apiPort)) {
-    Serial.println("HTTPS connection to cloud API failed");
-    currentTT.count = 0;
-    return;
-  }
-
-  timetableClient.setTimeout(HTTPS_TIMEOUT_MS / 1000);
-  timetableClient.print(String("GET ") + path + " HTTP/1.1\r\n");
-  timetableClient.print(String("Host: ") + apiHost + "\r\n");
-  timetableClient.print("Connection: close\r\n");
-  timetableClient.print("Accept: application/json\r\n\r\n");
-
-  unsigned long startWait = millis();
-  while (!timetableClient.available() && millis() - startWait < HTTPS_TIMEOUT_MS) delay(10);
-
-  String statusLine = timetableClient.readStringUntil('\n');
-  statusLine.trim();
-  int code = 0;
-  if (statusLine.startsWith("HTTP/")) {
-    int firstSpace = statusLine.indexOf(' ');
-    if (firstSpace > 0) code = statusLine.substring(firstSpace + 1, firstSpace + 4).toInt();
-  }
 
   currentTT.count = 0;
   currentTT.yearIdx    = yIdx;
@@ -740,37 +815,17 @@ void fetchTimetable(int yIdx, int sIdx, int secIdx) {
   currentTT.term[19]         = '\0';
   currentTT.isEvening = detectEvening(currentTT.session_name);
 
-  if (code != 200) {
-    timetableClient.stop();
+  String payload;
+  if (!cloudGet(path.c_str(), payload, 2)) {
+    Serial.println("[CLOUD] Timetable request failed");
     return;
   }
-
-  int contentLength = -1;
-  while (timetableClient.connected()) {
-    String header = timetableClient.readStringUntil('\n');
-    header.trim();
-    if (header.length() == 0) break;
-    if (header.startsWith("Content-Length:") || header.startsWith("content-length:"))
-      contentLength = header.substring(header.indexOf(':') + 1).toInt();
-  }
-
-  String payload;
-  if (contentLength > 0) payload.reserve(contentLength + 1);
-
-  unsigned long lastRead = millis();
-  while ((timetableClient.connected() || timetableClient.available()) && millis() - lastRead < HTTPS_TIMEOUT_MS) {
-    while (timetableClient.available()) {
-      payload += (char)timetableClient.read();
-      lastRead = millis();
-    }
-    delay(1);
-  }
-  timetableClient.stop();
 
   Serial.print("Payload length: "); Serial.println(payload.length());
 
   DynamicJsonDocument doc(24576);
   DeserializationError error = deserializeJson(doc, payload);
+  payload = String();
   if (error) { Serial.print("JSON parse failed: "); Serial.println(error.c_str()); return; }
 
   bool ok = doc["success"] | false;
@@ -831,16 +886,21 @@ void fetchOfficeTeachers(const char* floor) {
   if (WiFi.status() != WL_CONNECTED) return;
   for (int i = 0; i < OFFICE_ROOM_COUNT; i++) strncpy(officeTeacher[i], "----", 31);
   officeTeacherLoaded = 0;
-  HTTPClient http;
-  String url = apiUrl("/offices");
-  if (!http.begin(httpClient, url)) return;
-  http.setConnectTimeout(HTTPS_TIMEOUT_MS); http.setTimeout(HTTPS_TIMEOUT_MS);
-  int code = http.GET();
-  if (code != 200) { http.end(); return; }
-  String payload = http.getString();
-  http.end();
+
+  String payload;
+  if (!cloudGet("/offices", payload)) { Serial.println("[CLOUD] Offices request failed (ground floor)"); return; }
+
+  StaticJsonDocument<256> filter;
+  filter[0]["floor"]        = true;
+  filter[0]["room_number"]  = true;
+  filter[0]["teacher_name"] = true;
+
   DynamicJsonDocument doc(8192);
-  if (deserializeJson(doc, payload)) return;
+  DeserializationError error = deserializeJson(doc, payload, DeserializationOption::Filter(filter));
+  payload = String();
+  if (error) { Serial.print("[CLOUD] Offices JSON error: "); Serial.println(error.c_str()); return; }
+
+  int loaded = 0;
   for (JsonObject o : doc.as<JsonArray>()) {
     const char* floorStr = o["floor"]       | "";
     const char* roomStr  = o["room_number"] | "-1";
@@ -854,9 +914,10 @@ void fetchOfficeTeachers(const char* floor) {
       case 1: slot = 4; break; case 2: slot = 2; break; case 3: slot = 0; break;
       case 4: slot = 1; break; case 5: slot = 3; break; case 6: slot = 5; break;
     }
-    if (slot >= 0) { strncpy(officeTeacher[slot], teacher, 31); officeTeacher[slot][31] = '\0'; }
+    if (slot >= 0) { strncpy(officeTeacher[slot], teacher, 31); officeTeacher[slot][31] = '\0'; loaded++; }
   }
   officeTeacherLoaded = 1;
+  Serial.print("[CLOUD] Ground floor offices loaded: "); Serial.println(loaded);
 }
 
 void fetchFirstFloorTeachers() {
@@ -865,16 +926,20 @@ void fetchFirstFloorTeachers() {
   for (int i = 0; i < FF_STANDALONE_COUNT; i++) strncpy(ffStandaloneTeacher[i], "----", 31);
   for (int i = 0; i < CABIN2_ROOM_COUNT;   i++) strncpy(cabin2Teacher[i],        "----", 31);
   for (int i = 0; i < CABIN3_ROOM_COUNT;   i++) strncpy(cabin3Teacher[i],        "----", 31);
-  HTTPClient http;
-  String url = apiUrl("/offices");
-  if (!http.begin(httpClient, url)) return;
-  http.setConnectTimeout(HTTPS_TIMEOUT_MS); http.setTimeout(HTTPS_TIMEOUT_MS);
-  int code = http.GET();
-  if (code != 200) { http.end(); return; }
-  String payload = http.getString();
-  http.end();
+
+  String payload;
+  if (!cloudGet("/offices", payload)) { Serial.println("[CLOUD] Offices request failed (first floor)"); return; }
+
+  StaticJsonDocument<256> filter;
+  filter[0]["floor"]        = true;
+  filter[0]["room_number"]  = true;
+  filter[0]["teacher_name"] = true;
+
   DynamicJsonDocument doc(8192);
-  if (deserializeJson(doc, payload)) return;
+  DeserializationError error = deserializeJson(doc, payload, DeserializationOption::Filter(filter));
+  payload = String();
+  if (error) { Serial.print("[CLOUD] Offices JSON error: "); Serial.println(error.c_str()); return; }
+
   for (JsonObject o : doc.as<JsonArray>()) {
     const char* floorStr = o["floor"] | "";
     const char* roomStr  = o["room_number"] | "0";
@@ -908,6 +973,7 @@ void fetchFirstFloorTeachers() {
     }
   }
   ffTeacherLoaded = 1;
+  Serial.print("[CLOUD] First floor teachers loaded: "); Serial.println(ffTeacherCount);
 }
 
 void resolveFFTeacherHighlight(int teacherIdx) {
@@ -1811,7 +1877,7 @@ void drawCabin3Map() {
 }
 
 // ========================================
-// MQTT
+// MQTT  (UNCHANGED from OLD firmware)
 // ========================================
 void onMessage(char* topic, byte* payload, unsigned int len) {
   String msg = "";
@@ -2138,12 +2204,14 @@ void setup() {
     wifiManager.setConfigPortalTimeout(0);
     wifiManager.autoConnect("NoticeBoardSetup");
   }
+
+  // Cloud HTTPS needs a valid clock for certificate validation.
+  Serial.print("[CLOUD] API host: "); Serial.print(apiHost);
+  Serial.print(":"); Serial.println(apiPort);
   configureSecureClient(httpClient);
   if (!syncClockForTls()) {
-    Serial.println("Cloud HTTP features will retry after Wi-Fi reconnects");
+    Serial.println("[TLS] Clock not synced yet; each cloud request will retry NTP first");
   }
-  MDNS.begin("esp32board");
-
   resolveFFTeacherHighlight(-1);
 
    // Connected splash
@@ -2173,10 +2241,13 @@ void setup() {
   connectMQTT();
   delay(500);
  showCredits();
-  fetchAnnouncements();
-  fetchYears();
 
- 
+  // Load ALL active approved notices over HTTPS. This is independent of any
+  // retained MQTT message (MQTT only adds/updates; this rebuilds from the full list).
+  fetchAnnouncements(2);
+  fetchYears();
+  lastAnnFetch = millis();   // startup fetch just ran; next periodic refresh in 30 s
+
   drawMenu();
   Serial.println("[SETUP] Ready!");
 }
@@ -2191,8 +2262,10 @@ void loop() {
 
   if (millis() - lastAnnFetch > ANN_FETCH_INTERVAL) {
     lastAnnFetch = millis();
-    if (currentState == MENU && WiFi.status() == WL_CONNECTED)
-      fetchAnnouncements();
+    if (currentState == MENU && WiFi.status() == WL_CONNECTED) {
+      fetchAnnouncements(1);        // one attempt for background refresh so buttons stay responsive
+      lastAnnFetch = millis();      // measure the 30 s from when the request finished
+    }
   }
 
   if (millis() - lastWiFiCheck > WIFI_CHECK_INTERVAL) {
