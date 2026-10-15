@@ -1,6 +1,9 @@
 /*
- * Frontend API configuration.
- * Leave blank when the frontend and API share an origin. For Vercel, set this
- * value to the HTTPS URL of the Render service before deploying the frontend.
+ * Local development uses the Express server that serves this page. The Vercel
+ * deployment uses the public Render API. This lets contributors run `npm start`
+ * and open localhost:3000 without editing or committing this file.
  */
-window.NOTICE_BOARD_API_URL = 'https://knotify-api-bv4i.onrender.com';
+const isLocalDevelopment = ['localhost', '127.0.0.1'].includes(window.location.hostname);
+window.NOTICE_BOARD_API_URL = isLocalDevelopment
+  ? ''
+  : 'https://knotify-api-bv4i.onrender.com';
